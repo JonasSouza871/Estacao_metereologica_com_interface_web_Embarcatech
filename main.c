@@ -45,7 +45,7 @@ int main() {
 
 // Inicializa todos os periféricos de hardware: I2C, Display e Sensores.
 void configurar_perifericos(ssd1306_t *tela, struct bmp280_calib_param *params_calibracao) {
-    printf("Iniciando PicoAtmos...\n");
+    printf("Iniciando PicoAtmos..\n");
 
     i2c_init(I2C_SENSORES_PORT, 100 * 1000);
     gpio_set_function(I2C_SENSORES_SDA_PIN, GPIO_FUNC_I2C);
@@ -83,7 +83,7 @@ void mostrar_tela_abertura(ssd1306_t *tela) {
     uint8_t y_inicial = 28;
     ssd1306_draw_string(tela, nome_projeto, x_inicial, y_inicial, false);
 
-    const char *subtitulo = "Iniciando...";
+    const char *subtitulo = "Iniciando..";
     uint8_t x_subtitulo = (TELA_LARGURA - (strlen(subtitulo) * 6)) / 2;
     ssd1306_draw_string(tela, subtitulo, x_subtitulo, 45, true);
 
