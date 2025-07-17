@@ -3,6 +3,7 @@
 #include "pico/stdlib.h"
 #include "hardware/i2c.h"
 #include "hardware/gpio.h"
+#include "hardware/irq.h"
 #include "aht20.h"
 #include "bmp280.h"
 #include "ssd1306.h"
@@ -21,47 +22,63 @@
 #define TELA_ALTURA             64
 
 #define BOTAO_A_PIN             5 // Pino do botão A (GPIO 5)
+#define BOTAO_B_PIN             6 // Pino do botão B (GPIO 6)
 
 // --- Definições de Estado ---
 #define TELA_ABERTURA           0
 #define TELA_VALORES            1
 
+// --- Definições para Debouncing ---
+#define DEBOUNCE_MS             250 // Tempo de debounce em milissegundos
+#define INTERVALO_SENSORES_MS   2000 // Intervalo para leitura dos sensores
+#define INTERVALO_TELA_MS       100 // Intervalo para atualização da tela
+
 // --- Variáveis Globais ---
 volatile uint8_t tela_atual = TELA_ABERTURA; // Controla a tela exibida
+ssd1306_t tela_global; // Estrutura global para o display
+float global_temp_aht20 = 0.0, global_temp_bmp280 = 0.0, global_temp_media = 0.0;
+float global_umidade = 0.0, global_pressao = 0.0; // Valores dos sensores
 
 // --- Protótipos das Funções ---
 void configurar_perifericos(ssd1306_t *tela, struct bmp280_calib_param *params_calibracao);
-void configurar_botao(void);
+void configurar_botoes(void);
 void mostrar_tela_abertura(ssd1306_t *tela);
 void mostrar_tela_valores(ssd1306_t *tela, float temp_aht20, float temp_bmp280, float temp_media, float umidade, float pressao);
 void atualizar_tela(ssd1306_t *tela, float temp_aht20, float temp_bmp280, float temp_media, float umidade, float pressao);
 void ler_e_exibir_dados(struct bmp280_calib_param *params_calibracao, float *temp_aht20, float *temp_bmp280, float *temp_media, float *umidade, float *pressao);
-void botao_a_callback(uint gpio, uint32_t events);
+void botoes_callback(uint gpio, uint32_t events);
 
 // --- Função Principal ---
 int main() {
     stdio_init_all();
     sleep_ms(2000); // Pausa para conexão do monitor serial
 
-    ssd1306_t tela;
     struct bmp280_calib_param params_calibracao_bmp;
-    float temp_aht20 = 0.0, temp_bmp280 = 0.0, temp_media = 0.0, umidade = 0.0, pressao = 0.0;
+    uint64_t ultimo_tempo_sensores = 0;
 
-    configurar_perifericos(&tela, &params_calibracao_bmp);
-    configurar_botao(); // Configura o botão A
-    mostrar_tela_abertura(&tela);
+    configurar_perifericos(&tela_global, &params_calibracao_bmp);
+    configurar_botoes(); // Configura os botões A e B
+    mostrar_tela_abertura(&tela_global);
     sleep_ms(2500); // Tempo de exibição da tela de abertura
 
     while (1) {
-        ler_e_exibir_dados(&params_calibracao_bmp, &temp_aht20, &temp_bmp280, &temp_media, &umidade, &pressao);
-        atualizar_tela(&tela, temp_aht20, temp_bmp280, temp_media, umidade, pressao); // Atualiza a tela com base no estado
-        sleep_ms(2000);
+        uint64_t tempo_atual = time_us_64();
+
+        // Lê sensores a cada INTERVALO_SENSORES_MS
+        if ((tempo_atual - ultimo_tempo_sensores) >= (INTERVALO_SENSORES_MS * 1000)) {
+            ler_e_exibir_dados(&params_calibracao_bmp, &global_temp_aht20, &global_temp_bmp280, &global_temp_media, &global_umidade, &global_pressao);
+            ultimo_tempo_sensores = tempo_atual;
+        }
+
+        // Atualiza a tela a cada INTERVALO_TELA_MS
+        atualizar_tela(&tela_global, global_temp_aht20, global_temp_bmp280, global_temp_media, global_umidade, global_pressao);
+        sleep_ms(INTERVALO_TELA_MS);
     }
 
     return 0;
 }
 
-// Inicializa todos os periféricos de hardware: I2C, Display, Sensores e Botão.
+// Inicializa todos os periféricos de hardware: I2C, Display, Sensores.
 void configurar_perifericos(ssd1306_t *tela, struct bmp280_calib_param *params_calibracao) {
     printf("Iniciando PicoAtmos..\n");
 
@@ -91,18 +108,46 @@ void configurar_perifericos(ssd1306_t *tela, struct bmp280_calib_param *params_c
     printf("BMP280 inicializado e calibrado.\n\n");
 }
 
-// Configura o botão A com interrupção para alternar telas.
-void configurar_botao(void) {
+// Configura os botões A e B com interrupções de alta prioridade e debouncing.
+void configurar_botoes(void) {
+    // Configura Botão A
     gpio_init(BOTAO_A_PIN);
     gpio_set_dir(BOTAO_A_PIN, GPIO_IN);
     gpio_pull_up(BOTAO_A_PIN); // Pull-up interno para evitar flutuação
-    gpio_set_irq_enabled_with_callback(BOTAO_A_PIN, GPIO_IRQ_EDGE_FALL, true, &botao_a_callback);
+
+    // Configura Botão B
+    gpio_init(BOTAO_B_PIN);
+    gpio_set_dir(BOTAO_B_PIN, GPIO_IN);
+    gpio_pull_up(BOTAO_B_PIN); // Pull-up interno para evitar flutuação
+
+    // Habilita interrupções para ambos os botões com alta prioridade
+    gpio_set_irq_enabled_with_callback(BOTAO_A_PIN, GPIO_IRQ_EDGE_FALL, true, &botoes_callback);
+    gpio_set_irq_enabled_with_callback(BOTAO_B_PIN, GPIO_IRQ_EDGE_FALL, true, &botoes_callback);
+
+    // Define alta prioridade para as interrupções de GPIO
+    irq_set_priority(IO_IRQ_BANK0, 0x00); // 0x00 é a maior prioridade
 }
 
-// Callback para interrupção do botão A.
-void botao_a_callback(uint gpio, uint32_t events) {
-    if (gpio == BOTAO_A_PIN && events & GPIO_IRQ_EDGE_FALL) {
-        tela_atual = TELA_VALORES; // Altera para a tela de valores
+// Callback para interrupções dos botões A e B com debouncing.
+void botoes_callback(uint gpio, uint32_t events) {
+    static uint64_t ultimo_tempo_a = 0;
+    static uint64_t ultimo_tempo_b = 0;
+    uint64_t tempo_atual = time_us_64();
+
+    if (events & GPIO_IRQ_EDGE_FALL) {
+        if (gpio == BOTAO_A_PIN && (tempo_atual - ultimo_tempo_a) > (DEBOUNCE_MS * 1000)) {
+            tela_atual = TELA_VALORES; // Avança para a tela de valores
+            ultimo_tempo_a = tempo_atual;
+            atualizar_tela(&tela_global, global_temp_aht20, global_temp_bmp280, global_temp_media, global_umidade, global_pressao);
+        } else if (gpio == BOTAO_B_PIN && (tempo_atual - ultimo_tempo_b) > (DEBOUNCE_MS * 1000)) {
+            if (tela_atual == TELA_ABERTURA) {
+                tela_atual = TELA_VALORES; // Vai para a última tela se estiver na abertura
+            } else {
+                tela_atual = TELA_ABERTURA; // Volta para a tela anterior
+            }
+            ultimo_tempo_b = tempo_atual;
+            atualizar_tela(&tela_global, global_temp_aht20, global_temp_bmp280, global_temp_media, global_umidade, global_pressao);
+        }
     }
 }
 
@@ -140,7 +185,7 @@ void mostrar_tela_valores(ssd1306_t *tela, float temp_aht20, float temp_bmp280, 
     snprintf(buffer, sizeof(buffer), "TempBMP: %.2fC", temp_bmp280);
     ssd1306_draw_string(tela, buffer, 0, 20, false);
 
-    snprintf(buffer, sizeof(buffer), "TempMedia: %.2fC", temp_media);
+    snprintf(buffer, sizeof(buffer), "TempMed: %.2fC", temp_media);
     ssd1306_draw_string(tela, buffer, 0, 30, false);
 
     snprintf(buffer, sizeof(buffer), "Umidade: %.2f%%", umidade);
