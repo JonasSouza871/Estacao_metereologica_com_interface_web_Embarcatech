@@ -28,16 +28,13 @@
 #define TELA_ABERTURA           0
 #define TELA_VALORES            1
 
-// --- Definições para Debouncing ---
-#define DEBOUNCE_MS             250 // Tempo de debounce em milissegundos
-#define INTERVALO_SENSORES_MS   2000 // Intervalo para leitura dos sensores
-#define INTERVALO_TELA_MS       100 // Intervalo para atualização da tela
+// --- Definições para Lógica de Tempo ---
+#define DEBOUNCE_MS             250      // Tempo de debounce em milissegundos
+#define INTERVALO_LEITURA_MS    2000    // Intervalo para ler os sensores
 
 // --- Variáveis Globais ---
 volatile uint8_t tela_atual = TELA_ABERTURA; // Controla a tela exibida
-ssd1306_t tela_global; // Estrutura global para o display
-float global_temp_aht20 = 0.0, global_temp_bmp280 = 0.0, global_temp_media = 0.0;
-float global_umidade = 0.0, global_pressao = 0.0; // Valores dos sensores
+volatile bool precisa_atualizar_tela = true; // Flag para forçar a atualização da tela
 
 // --- Protótipos das Funções ---
 void configurar_perifericos(ssd1306_t *tela, struct bmp280_calib_param *params_calibracao);
@@ -53,26 +50,49 @@ int main() {
     stdio_init_all();
     sleep_ms(2000); // Pausa para conexão do monitor serial
 
+    ssd1306_t tela;
     struct bmp280_calib_param params_calibracao_bmp;
-    uint64_t ultimo_tempo_sensores = 0;
+    float temp_aht20 = 0.0, temp_bmp280 = 0.0, temp_media = 0.0, umidade = 0.0, pressao = 0.0;
+    
+    // Variável para controlar o tempo da próxima leitura dos sensores
+    uint64_t proxima_leitura_sensores = 0;
 
-    configurar_perifericos(&tela_global, &params_calibracao_bmp);
-    configurar_botoes(); // Configura os botões A e B
-    mostrar_tela_abertura(&tela_global);
-    sleep_ms(2500); // Tempo de exibição da tela de abertura
+    configurar_perifericos(&tela, &params_calibracao_bmp);
+    configurar_botoes();
+    
+    // A tela de abertura é mostrada uma vez aqui.
+    // O estado inicial já é TELA_ABERTURA.
+    mostrar_tela_abertura(&tela);
+    sleep_ms(2500); // Mantém a tela de abertura por um tempo inicial.
+
+    // **CORREÇÃO**: Reseta a flag para evitar uma atualização indesejada no primeiro loop.
+    // O programa agora vai esperar a interação do usuário para mudar de tela.
+    precisa_atualizar_tela = false;
 
     while (1) {
-        uint64_t tempo_atual = time_us_64();
+        // --- LÓGICA SEM BLOQUEIO (NON-BLOCKING) ---
 
-        // Lê sensores a cada INTERVALO_SENSORES_MS
-        if ((tempo_atual - ultimo_tempo_sensores) >= (INTERVALO_SENSORES_MS * 1000)) {
-            ler_e_exibir_dados(&params_calibracao_bmp, &global_temp_aht20, &global_temp_bmp280, &global_temp_media, &global_umidade, &global_pressao);
-            ultimo_tempo_sensores = tempo_atual;
+        // 1. Verifica se já é hora de ler os sensores
+        if (time_us_64() >= proxima_leitura_sensores) {
+            ler_e_exibir_dados(&params_calibracao_bmp, &temp_aht20, &temp_bmp280, &temp_media, &umidade, &pressao);
+            // Agenda a próxima leitura para daqui a INTERVALO_LEITURA_MS
+            proxima_leitura_sensores = time_us_64() + (INTERVALO_LEITURA_MS * 1000);
+            
+            // **CORREÇÃO**: Só marca para atualizar a tela se já estivermos na tela de valores.
+            // Isso evita que a tela de abertura seja redesenhada com dados novos.
+            if (tela_atual == TELA_VALORES) {
+                precisa_atualizar_tela = true;
+            }
         }
 
-        // Atualiza a tela a cada INTERVALO_TELA_MS
-        atualizar_tela(&tela_global, global_temp_aht20, global_temp_bmp280, global_temp_media, global_umidade, global_pressao);
-        sleep_ms(INTERVALO_TELA_MS);
+        // 2. Verifica se a tela precisa ser atualizada (seja por nova leitura ou por botão)
+        if (precisa_atualizar_tela) {
+            atualizar_tela(&tela, temp_aht20, temp_bmp280, temp_media, umidade, pressao);
+            precisa_atualizar_tela = false; // Reseta a flag após atualizar
+        }
+
+        // Adiciona uma pequena pausa para não sobrecarregar a CPU.
+        sleep_ms(10);
     }
 
     return 0;
@@ -113,12 +133,11 @@ void configurar_botoes(void) {
     // Configura Botão A
     gpio_init(BOTAO_A_PIN);
     gpio_set_dir(BOTAO_A_PIN, GPIO_IN);
-    gpio_pull_up(BOTAO_A_PIN); // Pull-up interno para evitar flutuação
-
+    gpio_pull_up(BOTAO_A_PIN);
     // Configura Botão B
     gpio_init(BOTAO_B_PIN);
     gpio_set_dir(BOTAO_B_PIN, GPIO_IN);
-    gpio_pull_up(BOTAO_B_PIN); // Pull-up interno para evitar flutuação
+    gpio_pull_up(BOTAO_B_PIN);
 
     // Habilita interrupções para ambos os botões com alta prioridade
     gpio_set_irq_enabled_with_callback(BOTAO_A_PIN, GPIO_IRQ_EDGE_FALL, true, &botoes_callback);
@@ -136,17 +155,18 @@ void botoes_callback(uint gpio, uint32_t events) {
 
     if (events & GPIO_IRQ_EDGE_FALL) {
         if (gpio == BOTAO_A_PIN && (tempo_atual - ultimo_tempo_a) > (DEBOUNCE_MS * 1000)) {
-            tela_atual = TELA_VALORES; // Avança para a tela de valores
+            tela_atual = TELA_VALORES;
+            precisa_atualizar_tela = true; // Força a atualização da tela
             ultimo_tempo_a = tempo_atual;
-            atualizar_tela(&tela_global, global_temp_aht20, global_temp_bmp280, global_temp_media, global_umidade, global_pressao);
         } else if (gpio == BOTAO_B_PIN && (tempo_atual - ultimo_tempo_b) > (DEBOUNCE_MS * 1000)) {
+            // Alterna entre as telas
             if (tela_atual == TELA_ABERTURA) {
-                tela_atual = TELA_VALORES; // Vai para a última tela se estiver na abertura
+                tela_atual = TELA_VALORES;
             } else {
-                tela_atual = TELA_ABERTURA; // Volta para a tela anterior
+                tela_atual = TELA_ABERTURA;
             }
+            precisa_atualizar_tela = true; // Força a atualização da tela
             ultimo_tempo_b = tempo_atual;
-            atualizar_tela(&tela_global, global_temp_aht20, global_temp_bmp280, global_temp_media, global_umidade, global_pressao);
         }
     }
 }
@@ -161,7 +181,7 @@ void mostrar_tela_abertura(ssd1306_t *tela) {
     uint8_t y_inicial = 28;
     ssd1306_draw_string(tela, nome_projeto, x_inicial, y_inicial, false);
 
-    const char *subtitulo = "Iniciando..";
+    const char *subtitulo = "Pronto!";
     uint8_t x_subtitulo = (TELA_LARGURA - (strlen(subtitulo) * 6)) / 2;
     ssd1306_draw_string(tela, subtitulo, x_subtitulo, 45, true);
 
@@ -173,26 +193,26 @@ void mostrar_tela_valores(ssd1306_t *tela, float temp_aht20, float temp_bmp280, 
     ssd1306_fill(tela, 0); // Preenche a tela com fundo preto
 
     // Título centralizado
-    const char *titulo = "Valores medidos:";
+    const char *titulo = "Valores Medidos";
     uint8_t x_titulo = (TELA_LARGURA - (strlen(titulo) * 8)) / 2;
     ssd1306_draw_string(tela, titulo, x_titulo, 0, false);
 
     // Formata os valores para exibição
     char buffer[32];
-    snprintf(buffer, sizeof(buffer), "TempAHT: %.2fC", temp_aht20);
-    ssd1306_draw_string(tela, buffer, 0, 10, false);
+    snprintf(buffer, sizeof(buffer), "TempAHT: %.1fC", temp_aht20);
+    ssd1306_draw_string(tela, buffer, 0, 12, false);
 
-    snprintf(buffer, sizeof(buffer), "TempBMP: %.2fC", temp_bmp280);
-    ssd1306_draw_string(tela, buffer, 0, 20, false);
+    snprintf(buffer, sizeof(buffer), "TempBMP: %.1fC", temp_bmp280);
+    ssd1306_draw_string(tela, buffer, 0, 22, false);
 
-    snprintf(buffer, sizeof(buffer), "TempMed: %.2fC", temp_media);
-    ssd1306_draw_string(tela, buffer, 0, 30, false);
+    snprintf(buffer, sizeof(buffer), "TempMed: %.1fC", temp_media);
+    ssd1306_draw_string(tela, buffer, 0, 32, false);
 
-    snprintf(buffer, sizeof(buffer), "Umidade: %.2f%%", umidade);
-    ssd1306_draw_string(tela, buffer, 0, 40, false);
+    snprintf(buffer, sizeof(buffer), "Umidade: %.1f%%", umidade);
+    ssd1306_draw_string(tela, buffer, 0, 42, false);
 
-    snprintf(buffer, sizeof(buffer), "Press: %.2fhPa", pressao);
-    ssd1306_draw_string(tela, buffer, 0, 50, false);
+    snprintf(buffer, sizeof(buffer), "Pressao: %.1fhPa", pressao / 100.0);
+    ssd1306_draw_string(tela, buffer, 0, 52, false);
 
     ssd1306_send_data(tela); // Envia os dados para o display
 }
@@ -231,12 +251,12 @@ void ler_e_exibir_dados(struct bmp280_calib_param *params_calibracao, float *tem
     int32_t pressao_compensada_int = bmp280_convert_pressure(pressao_bruta, temp_bruta, params_calibracao);
     
     *temp_bmp280 = temp_compensada_int / 100.0;
-    *pressao = pressao_compensada_int / 100.0;
+    *pressao = pressao_compensada_int; // Mantém em Pa para conversão depois
     
     *temp_media = (*temp_aht20 + *temp_bmp280) / 2.0;
     
     // Exibe todos os dados de forma consolidada no terminal
     printf("Temp Media: %.2f C | Umidade: %.2f %% | Pressao: %.2f hPa\n",
-           *temp_media, *umidade, *pressao);
+           *temp_media, *umidade, *pressao / 100.0);
     printf("----------------------------------------------------------------\n");
 }
