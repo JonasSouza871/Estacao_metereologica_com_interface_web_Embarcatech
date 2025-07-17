@@ -30,8 +30,9 @@
 #define TELA_VALORES            1
 #define TELA_CONEXAO            2
 #define TELA_GRAFICO            3
-#define TELA_UMIDADE            4 // NOVA TELA
-#define NUM_TELAS               5 // NÚMERO TOTAL DE TELAS
+#define TELA_UMIDADE            4
+#define TELA_PRESSAO            5 // NOVA TELA
+#define NUM_TELAS               6 // NÚMERO TOTAL DE TELAS
 #define DEBOUNCE_MS             250
 #define INTERVALO_LEITURA_MS    2000
 #define TAMANHO_GRAFICO         30 // 60 segundos / 2s por leitura
@@ -40,14 +41,16 @@
 volatile uint8_t tela_atual = TELA_ABERTURA;
 volatile bool    atualizar_tela_flag = true;
 volatile float   fator_zoom = 1.0f;
-volatile float   fator_zoom_umidade = 1.0f; // NOVO FATOR DE ZOOM PARA UMIDADE
+volatile float   fator_zoom_umidade = 1.0f;
+volatile float   fator_zoom_pressao = 1.0f; // NOVO FATOR DE ZOOM PARA PRESSÃO
 
 static uint64_t  ultimo_zoom_ms = 0;
 const  uint32_t  ZOOM_DEBOUNCE_MS = 120;
 
 // Buffers para os gráficos
 float buffer_temperaturas[TAMANHO_GRAFICO];
-float buffer_umidade[TAMANHO_GRAFICO]; // NOVO BUFFER PARA UMIDADE
+float buffer_umidade[TAMANHO_GRAFICO];
+float buffer_pressao[TAMANHO_GRAFICO]; // NOVO BUFFER PARA PRESSÃO
 int   indice_buffer = 0;
 int   contador_buffer = 0;
 
@@ -59,7 +62,8 @@ void mostrar_tela_abertura(ssd1306_t *);
 void mostrar_tela_valores(ssd1306_t *, float, float, float, float, float);
 void mostrar_tela_conexao(ssd1306_t *);
 void mostrar_tela_grafico(ssd1306_t *);
-void mostrar_tela_umidade(ssd1306_t *); // NOVA FUNÇÃO DE TELA
+void mostrar_tela_umidade(ssd1306_t *);
+void mostrar_tela_pressao(ssd1306_t *); // NOVA FUNÇÃO DE TELA
 void atualizar_tela(ssd1306_t *, float, float, float, float, float);
 void ler_e_exibir_dados(struct bmp280_calib_param *, float*, float*, float*, float*, float*);
 void callback_botoes(uint, uint32_t);
@@ -87,13 +91,14 @@ int main() {
 
             // Armazena os dados nos buffers circulares
             buffer_temperaturas[indice_buffer] = temperatura_media;
-            buffer_umidade[indice_buffer] = umidade; // ARMAZENA UMIDADE
+            buffer_umidade[indice_buffer] = umidade;
+            buffer_pressao[indice_buffer] = pressao / 100.0f; // Armazena em hPa
             
             indice_buffer = (indice_buffer + 1) % TAMANHO_GRAFICO;
             if (contador_buffer < TAMANHO_GRAFICO) contador_buffer++;
 
             // Atualiza a tela se estiver exibindo dados que mudam com o tempo
-            if (tela_atual == TELA_VALORES || tela_atual == TELA_GRAFICO || tela_atual == TELA_UMIDADE)
+            if (tela_atual == TELA_VALORES || tela_atual == TELA_GRAFICO || tela_atual == TELA_UMIDADE || tela_atual == TELA_PRESSAO)
                 atualizar_tela_flag = true;
         }
         
@@ -166,8 +171,7 @@ void callback_botoes(uint gpio, uint32_t eventos) {
 }
 
 void callback_joystick(void) {
-    // O joystick afeta o zoom nos gráficos de temperatura e umidade
-    if (tela_atual != TELA_GRAFICO && tela_atual != TELA_UMIDADE) return;
+    if (tela_atual != TELA_GRAFICO && tela_atual != TELA_UMIDADE && tela_atual != TELA_PRESSAO) return;
 
     const uint16_t ZONA_MORTA_BAIXA = 1500, ZONA_MORTA_ALTA = 2500;
     uint16_t valor = adc_read();
@@ -177,19 +181,21 @@ void callback_joystick(void) {
     bool mudou = false;
     if (tela_atual == TELA_GRAFICO) {
         if (valor > ZONA_MORTA_ALTA && fator_zoom < 4.0f) {
-            fator_zoom += 0.10f;
-            mudou = true;
+            fator_zoom += 0.10f; mudou = true;
         } else if (valor < ZONA_MORTA_BAIXA && fator_zoom > 0.25f) {
-            fator_zoom -= 0.10f;
-            mudou = true;
+            fator_zoom -= 0.10f; mudou = true;
         }
     } else if (tela_atual == TELA_UMIDADE) {
         if (valor > ZONA_MORTA_ALTA && fator_zoom_umidade < 4.0f) {
-            fator_zoom_umidade += 0.10f;
-            mudou = true;
+            fator_zoom_umidade += 0.10f; mudou = true;
         } else if (valor < ZONA_MORTA_BAIXA && fator_zoom_umidade > 0.25f) {
-            fator_zoom_umidade -= 0.10f;
-            mudou = true;
+            fator_zoom_umidade -= 0.10f; mudou = true;
+        }
+    } else if (tela_atual == TELA_PRESSAO) {
+        if (valor > ZONA_MORTA_ALTA && fator_zoom_pressao < 4.0f) {
+            fator_zoom_pressao += 0.10f; mudou = true;
+        } else if (valor < ZONA_MORTA_BAIXA && fator_zoom_pressao > 0.25f) {
+            fator_zoom_pressao -= 0.10f; mudou = true;
         }
     }
 
@@ -336,7 +342,6 @@ void mostrar_tela_umidade(ssd1306_t *tela) {
         return;
     }
 
-    // Encontra min/max no buffer de umidade
     float valor_min = buffer_umidade[0], valor_max = valor_min;
     for (int i = 0; i < contador_buffer; ++i) {
         int idx = (indice_buffer - contador_buffer + i + TAMANHO_GRAFICO) % TAMANHO_GRAFICO;
@@ -344,19 +349,104 @@ void mostrar_tela_umidade(ssd1306_t *tela) {
         if (valor < valor_min) valor_min = valor;
         if (valor > valor_max) valor_max = valor;
     }
-    // Garante uma faixa vertical mínima para estabilizar o eixo Y
-    if (valor_max - valor_min < 10.0f) { // Faixa mínima de 10%
+    if (valor_max - valor_min < 10.0f) {
         float media = (valor_max + valor_min) / 2.0f;
         valor_min = media - 5.0f;
         valor_max = media + 5.0f;
     }
-    // Garante que os limites fiquem dentro de 0-100
     if (valor_min < 0.0f) valor_min = 0.0f;
     if (valor_max > 100.0f) valor_max = 100.0f;
 
+    float faixa_visivel = (valor_max - valor_min) / fator_zoom_umidade;
+    float centro = (valor_max + valor_min) * 0.5f;
+    float ymin = centro - faixa_visivel * 0.5f;
+    float ymax = centro + faixa_visivel * 0.5f;
+
+    float passo_aproximado = faixa_visivel / 3.0f;
+    float potencia = powf(10.0f, floorf(log10f(passo_aproximado)));
+    float mantissa = passo_aproximado / potencia;
+    float passo = (mantissa < 1.5f) ? 1.0f : (mantissa < 3.5f) ? 2.0f : (mantissa < 7.5f) ? 5.0f : 10.0f;
+    passo *= potencia;
+    if (passo < 1.0f) passo = 1.0f;
+
+    float ymax_marcacao = ceilf(ymax / passo) * passo;
+    float ymin_marcacao = floorf(ymin / passo) * passo;
+    faixa_visivel = ymax_marcacao - ymin_marcacao;
+    if (faixa_visivel < 1.0f) faixa_visivel = 1.0f;
+
+    ssd1306_hline(tela, gx, gx + W, gy, true);
+    ssd1306_vline(tela, gx, gy - H, gy, true);
+
+    char buffer[8];
+    int num_marcacoes = 0;
+    for (float val = ymax_marcacao; val >= ymin_marcacao - (passo * 0.1f); val -= passo) {
+        if (num_marcacoes++ >= 4) break;
+        uint8_t y = gy - (uint8_t)(((val - ymin_marcacao) / faixa_visivel) * H);
+        if (y > gy || y < (gy - H)) continue;
+        
+        ssd1306_hline(tela, gx - 2, gx, y, true);
+        snprintf(buffer, sizeof(buffer), "%.0f", val);
+        ssd1306_draw_string(tela, buffer, 0, y - 4, false);
+    }
+    
+    ssd1306_draw_string(tela, "%", 0, gy - H - 8, false);
+
+    ssd1306_vline(tela, gx, gy, gy + 2, true);
+    ssd1306_vline(tela, gx + W / 2, gy, gy + 2, true);
+    ssd1306_vline(tela, gx + W, gy, gy + 2, true);
+    ssd1306_draw_string(tela, "0", gx - 3, gy + 5, false);
+    ssd1306_draw_string(tela, "30s", gx + W / 2 - 10, gy + 5, false);
+    ssd1306_draw_string(tela, "60s", gx + W - 18, gy + 5, false);
+
+    if (contador_buffer > 1) {
+        for (int i = 0; i < contador_buffer - 1; ++i) {
+            int idx_atual = (indice_buffer - contador_buffer + i + TAMANHO_GRAFICO) % TAMANHO_GRAFICO;
+            int idx_proximo = (idx_atual + 1) % TAMANHO_GRAFICO;
+            float valor1 = buffer_umidade[idx_atual];
+            float valor2 = buffer_umidade[idx_proximo];
+            uint8_t x1 = gx + (i * W) / (TAMANHO_GRAFICO - 1);
+            uint8_t y1 = gy - (uint8_t)(((valor1 - ymin_marcacao) / faixa_visivel) * H);
+            uint8_t x2 = gx + ((i + 1) * W) / (TAMANHO_GRAFICO - 1);
+            uint8_t y2 = gy - (uint8_t)(((valor2 - ymin_marcacao) / faixa_visivel) * H);
+            if (y1 >= (gy - H) && y1 <= gy && y2 >= (gy - H) && y2 <= gy) {
+                 ssd1306_line(tela, x1, y1, x2, y2, true);
+            }
+        }
+    }
+    ssd1306_send_data(tela);
+}
+
+/* ---- NOVA TELA: GRÁFICO DE PRESSÃO ---------------------------- */
+void mostrar_tela_pressao(ssd1306_t *tela) {
+    ssd1306_fill(tela, 0);
+
+    const uint8_t gx = 20, gy = 52, H = 40, W = 105;
+    const char *titulo = "Pressao";
+    ssd1306_draw_string(tela, titulo, (TELA_LARGURA - strlen(titulo) * 8) / 2, 0, false);
+
+    if (contador_buffer == 0) {
+        ssd1306_draw_string(tela, "Aguardando dados...", 8, 30, false);
+        ssd1306_send_data(tela);
+        return;
+    }
+
+    // Encontra min/max no buffer de pressão
+    float valor_min = buffer_pressao[0], valor_max = valor_min;
+    for (int i = 0; i < contador_buffer; ++i) {
+        int idx = (indice_buffer - contador_buffer + i + TAMANHO_GRAFICO) % TAMANHO_GRAFICO;
+        float valor = buffer_pressao[idx];
+        if (valor < valor_min) valor_min = valor;
+        if (valor > valor_max) valor_max = valor;
+    }
+    // Garante uma faixa vertical mínima de 10 hPa
+    if (valor_max - valor_min < 10.0f) {
+        float media = (valor_max + valor_min) / 2.0f;
+        valor_min = media - 5.0f;
+        valor_max = media + 5.0f;
+    }
 
     // Aplica o zoom
-    float faixa_visivel = (valor_max - valor_min) / fator_zoom_umidade;
+    float faixa_visivel = (valor_max - valor_min) / fator_zoom_pressao;
     float centro = (valor_max + valor_min) * 0.5f;
     float ymin = centro - faixa_visivel * 0.5f;
     float ymax = centro + faixa_visivel * 0.5f;
@@ -367,7 +457,7 @@ void mostrar_tela_umidade(ssd1306_t *tela) {
     float mantissa = passo_aproximado / potencia;
     float passo = (mantissa < 1.5f) ? 1.0f : (mantissa < 3.5f) ? 2.0f : (mantissa < 7.5f) ? 5.0f : 10.0f;
     passo *= potencia;
-    if (passo < 1.0f) passo = 1.0f; // Passo mínimo de 1%
+    if (passo < 1.0f) passo = 1.0f;
 
     // Ajusta limites para o múltiplo do passo mais próximo
     float ymax_marcacao = ceilf(ymax / passo) * passo;
@@ -393,8 +483,7 @@ void mostrar_tela_umidade(ssd1306_t *tela) {
     }
     
     // Rótulo da unidade do eixo Y
-    ssd1306_draw_string(tela, "%", 0, gy - H - 8, false);
-
+    ssd1306_draw_string(tela, "hPa", 0, gy - H - 8, false);
 
     // Marcações e rótulos no eixo X (tempo em segundos)
     ssd1306_vline(tela, gx, gy, gy + 2, true);
@@ -404,21 +493,20 @@ void mostrar_tela_umidade(ssd1306_t *tela) {
     ssd1306_draw_string(tela, "30s", gx + W / 2 - 10, gy + 5, false);
     ssd1306_draw_string(tela, "60s", gx + W - 18, gy + 5, false);
 
-    // Desenha o gráfico de umidade
+    // Desenha o gráfico de pressão
     if (contador_buffer > 1) {
         for (int i = 0; i < contador_buffer - 1; ++i) {
             int idx_atual = (indice_buffer - contador_buffer + i + TAMANHO_GRAFICO) % TAMANHO_GRAFICO;
             int idx_proximo = (idx_atual + 1) % TAMANHO_GRAFICO;
 
-            float valor1 = buffer_umidade[idx_atual];
-            float valor2 = buffer_umidade[idx_proximo];
+            float valor1 = buffer_pressao[idx_atual];
+            float valor2 = buffer_pressao[idx_proximo];
 
             uint8_t x1 = gx + (i * W) / (TAMANHO_GRAFICO - 1);
             uint8_t y1 = gy - (uint8_t)(((valor1 - ymin_marcacao) / faixa_visivel) * H);
             uint8_t x2 = gx + ((i + 1) * W) / (TAMANHO_GRAFICO - 1);
             uint8_t y2 = gy - (uint8_t)(((valor2 - ymin_marcacao) / faixa_visivel) * H);
 
-            // Garante que a linha não seja desenhada fora da área do gráfico
             if (y1 >= (gy - H) && y1 <= gy && y2 >= (gy - H) && y2 <= gy) {
                  ssd1306_line(tela, x1, y1, x2, y2, true);
             }
@@ -428,6 +516,7 @@ void mostrar_tela_umidade(ssd1306_t *tela) {
     ssd1306_send_data(tela);
 }
 
+
 /* ---------------- Funções de Controle -------------------------- */
 void atualizar_tela(ssd1306_t *tela, float temp_aht, float temp_bmp, float temp_media, float umid, float press) {
     switch (tela_atual) {
@@ -436,6 +525,7 @@ void atualizar_tela(ssd1306_t *tela, float temp_aht, float temp_bmp, float temp_
         case TELA_CONEXAO:  mostrar_tela_conexao(tela); break;
         case TELA_GRAFICO:  mostrar_tela_grafico(tela); break;
         case TELA_UMIDADE:  mostrar_tela_umidade(tela); break;
+        case TELA_PRESSAO:  mostrar_tela_pressao(tela); break; // ATUALIZADO
     }
 }
 
