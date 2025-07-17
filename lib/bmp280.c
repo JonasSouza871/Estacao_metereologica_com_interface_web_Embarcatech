@@ -1,7 +1,7 @@
 #include "bmp280.h"
 #include "hardware/i2c.h"
 
-#define ADDR _u(0x76)
+#define ADDR _u(0x77)
 
 void bmp280_init(i2c_inst_t *i2c) {
     uint8_t buf[2];
