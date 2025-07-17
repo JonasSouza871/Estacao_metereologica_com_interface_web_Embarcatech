@@ -24,7 +24,7 @@
 
 // --- Definições de Estado ---
 #define TELA_ABERTURA           0
-#define TELA_VAZIA              1
+#define TELA_VALORES            1
 
 // --- Variáveis Globais ---
 volatile uint8_t tela_atual = TELA_ABERTURA; // Controla a tela exibida
@@ -33,9 +33,9 @@ volatile uint8_t tela_atual = TELA_ABERTURA; // Controla a tela exibida
 void configurar_perifericos(ssd1306_t *tela, struct bmp280_calib_param *params_calibracao);
 void configurar_botao(void);
 void mostrar_tela_abertura(ssd1306_t *tela);
-void mostrar_tela_vazia(ssd1306_t *tela);
-void atualizar_tela(ssd1306_t *tela);
-void ler_e_exibir_dados(struct bmp280_calib_param *params_calibracao);
+void mostrar_tela_valores(ssd1306_t *tela, float temp_aht20, float temp_bmp280, float temp_media, float umidade, float pressao);
+void atualizar_tela(ssd1306_t *tela, float temp_aht20, float temp_bmp280, float temp_media, float umidade, float pressao);
+void ler_e_exibir_dados(struct bmp280_calib_param *params_calibracao, float *temp_aht20, float *temp_bmp280, float *temp_media, float *umidade, float *pressao);
 void botao_a_callback(uint gpio, uint32_t events);
 
 // --- Função Principal ---
@@ -45,6 +45,7 @@ int main() {
 
     ssd1306_t tela;
     struct bmp280_calib_param params_calibracao_bmp;
+    float temp_aht20 = 0.0, temp_bmp280 = 0.0, temp_media = 0.0, umidade = 0.0, pressao = 0.0;
 
     configurar_perifericos(&tela, &params_calibracao_bmp);
     configurar_botao(); // Configura o botão A
@@ -52,10 +53,8 @@ int main() {
     sleep_ms(2500); // Tempo de exibição da tela de abertura
 
     while (1) {
-        if (tela_atual == TELA_ABERTURA) {
-            ler_e_exibir_dados(&params_calibracao_bmp);
-        }
-        atualizar_tela(&tela); // Atualiza a tela com base no estado
+        ler_e_exibir_dados(&params_calibracao_bmp, &temp_aht20, &temp_bmp280, &temp_media, &umidade, &pressao);
+        atualizar_tela(&tela, temp_aht20, temp_bmp280, temp_media, umidade, pressao); // Atualiza a tela com base no estado
         sleep_ms(2000);
     }
 
@@ -103,7 +102,7 @@ void configurar_botao(void) {
 // Callback para interrupção do botão A.
 void botao_a_callback(uint gpio, uint32_t events) {
     if (gpio == BOTAO_A_PIN && events & GPIO_IRQ_EDGE_FALL) {
-        tela_atual = TELA_VAZIA; // Altera para a tela vazia
+        tela_atual = TELA_VALORES; // Altera para a tela de valores
     }
 }
 
@@ -124,20 +123,43 @@ void mostrar_tela_abertura(ssd1306_t *tela) {
     ssd1306_send_data(tela);
 }
 
-// Exibe uma tela vazia no display.
-void mostrar_tela_vazia(ssd1306_t *tela) {
+// Exibe a tela com os valores medidos pelos sensores.
+void mostrar_tela_valores(ssd1306_t *tela, float temp_aht20, float temp_bmp280, float temp_media, float umidade, float pressao) {
     ssd1306_fill(tela, 0); // Preenche a tela com fundo preto
+
+    // Título centralizado
+    const char *titulo = "Valores medidos:";
+    uint8_t x_titulo = (TELA_LARGURA - (strlen(titulo) * 8)) / 2;
+    ssd1306_draw_string(tela, titulo, x_titulo, 0, false);
+
+    // Formata os valores para exibição
+    char buffer[32];
+    snprintf(buffer, sizeof(buffer), "TempAHT: %.2fC", temp_aht20);
+    ssd1306_draw_string(tela, buffer, 0, 10, false);
+
+    snprintf(buffer, sizeof(buffer), "TempBMP: %.2fC", temp_bmp280);
+    ssd1306_draw_string(tela, buffer, 0, 20, false);
+
+    snprintf(buffer, sizeof(buffer), "TempMedia: %.2fC", temp_media);
+    ssd1306_draw_string(tela, buffer, 0, 30, false);
+
+    snprintf(buffer, sizeof(buffer), "Umidade: %.2f%%", umidade);
+    ssd1306_draw_string(tela, buffer, 0, 40, false);
+
+    snprintf(buffer, sizeof(buffer), "Press: %.2fhPa", pressao);
+    ssd1306_draw_string(tela, buffer, 0, 50, false);
+
     ssd1306_send_data(tela); // Envia os dados para o display
 }
 
 // Atualiza o conteúdo do display com base no estado da tela_atual.
-void atualizar_tela(ssd1306_t *tela) {
+void atualizar_tela(ssd1306_t *tela, float temp_aht20, float temp_bmp280, float temp_media, float umidade, float pressao) {
     switch (tela_atual) {
         case TELA_ABERTURA:
             mostrar_tela_abertura(tela);
             break;
-        case TELA_VAZIA:
-            mostrar_tela_vazia(tela);
+        case TELA_VALORES:
+            mostrar_tela_valores(tela, temp_aht20, temp_bmp280, temp_media, umidade, pressao);
             break;
         default:
             mostrar_tela_abertura(tela); // Fallback para tela de abertura
@@ -146,16 +168,15 @@ void atualizar_tela(ssd1306_t *tela) {
 }
 
 // Lê os dados dos sensores, processa e exibe no terminal serial.
-void ler_e_exibir_dados(struct bmp280_calib_param *params_calibracao) {
-    float temperatura_aht20 = 0.0, umidade_aht20 = 0.0;
-    float temperatura_bmp280 = 0.0, pressao_hpa = 0.0;
-
+void ler_e_exibir_dados(struct bmp280_calib_param *params_calibracao, float *temp_aht20, float *temp_bmp280, float *temp_media, float *umidade, float *pressao) {
     AHT20_Data dados_aht20;
     if (aht20_read(I2C_SENSORES_PORT, &dados_aht20)) {
-        temperatura_aht20 = dados_aht20.temperature;
-        umidade_aht20 = dados_aht20.humidity;
+        *temp_aht20 = dados_aht20.temperature;
+        *umidade = dados_aht20.humidity;
     } else {
         printf("Falha ao ler dados do AHT20.\n");
+        *temp_aht20 = 0.0;
+        *umidade = 0.0;
     }
 
     int32_t temp_bruta, pressao_bruta;
@@ -164,13 +185,13 @@ void ler_e_exibir_dados(struct bmp280_calib_param *params_calibracao) {
     int32_t temp_compensada_int = bmp280_convert_temp(temp_bruta, params_calibracao);
     int32_t pressao_compensada_int = bmp280_convert_pressure(pressao_bruta, temp_bruta, params_calibracao);
     
-    temperatura_bmp280 = temp_compensada_int / 100.0;
-    pressao_hpa = pressao_compensada_int / 100.0;
+    *temp_bmp280 = temp_compensada_int / 100.0;
+    *pressao = pressao_compensada_int / 100.0;
     
-    float temperatura_media = (temperatura_aht20 + temperatura_bmp280) / 2.0;
+    *temp_media = (*temp_aht20 + *temp_bmp280) / 2.0;
     
     // Exibe todos os dados de forma consolidada no terminal
     printf("Temp Media: %.2f C | Umidade: %.2f %% | Pressao: %.2f hPa\n",
-           temperatura_media, umidade_aht20, pressao_hpa);
+           *temp_media, *umidade, *pressao);
     printf("----------------------------------------------------------------\n");
 }
