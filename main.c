@@ -18,12 +18,13 @@
 #define TELA_ENDERECO           0x3C    // Endereço I2C do display SSD1306
 #define TELA_LARGURA            128     // Largura do display em pixels
 #define TELA_ALTURA             64      // Altura do display em pixels
-#define BOTAO_A_PIN             5       // Pino GPIO 5 para o botão A
-#define BOTAO_B_PIN             6       // Pino GPIO 6 para o botão B
+#define BOTAO_A_PIN             5       // Pino GPIO 5 para o botão A (Avançar)
+#define BOTAO_B_PIN             6       // Pino GPIO 6 para o botão B (Voltar)
 
 // --- Definições de Estado e Tempo ---
 #define TELA_ABERTURA           0
 #define TELA_VALORES            1
+#define TELA_CONEXAO            2       // Nova tela de conexão
 #define DEBOUNCE_MS             250     // Filtro para evitar múltiplas leituras do botão
 #define INTERVALO_LEITURA_MS    2000    // Frequência de leitura dos sensores
 
@@ -36,6 +37,7 @@ void configurar_perifericos(ssd1306_t *tela, struct bmp280_calib_param *params_c
 void configurar_botoes(void);
 void mostrar_tela_abertura(ssd1306_t *tela);
 void mostrar_tela_valores(ssd1306_t *tela, float temp_aht20, float temp_bmp280, float temp_media, float umidade, float pressao);
+void mostrar_tela_conexao(ssd1306_t *tela); // Protótipo da nova função
 void atualizar_tela(ssd1306_t *tela, float temp_aht20, float temp_bmp280, float temp_media, float umidade, float pressao);
 void ler_e_exibir_dados(struct bmp280_calib_param *params_calibracao, float *temp_aht20, float *temp_bmp280, float *temp_media, float *umidade, float *pressao);
 void botoes_callback(uint gpio, uint32_t events);
@@ -126,11 +128,19 @@ void botoes_callback(uint gpio, uint32_t events) {
 
     if (events & GPIO_IRQ_EDGE_FALL) { // A interrupção é ativada na borda de descida (botão pressionado)
         if (gpio == BOTAO_A_PIN && (tempo_atual - ultimo_tempo_a) > (DEBOUNCE_MS * 1000)) {
-            tela_atual = TELA_VALORES;
+            // Botão A avança para a próxima tela
+            if (tela_atual == TELA_ABERTURA) tela_atual = TELA_VALORES;
+            else if (tela_atual == TELA_VALORES) tela_atual = TELA_CONEXAO;
+            else if (tela_atual == TELA_CONEXAO) tela_atual = TELA_ABERTURA; // Volta para o início
+            
             precisa_atualizar_tela = true;
             ultimo_tempo_a = tempo_atual;
         } else if (gpio == BOTAO_B_PIN && (tempo_atual - ultimo_tempo_b) > (DEBOUNCE_MS * 1000)) {
-            tela_atual = (tela_atual == TELA_ABERTURA) ? TELA_VALORES : TELA_ABERTURA; // Alterna entre as telas
+            // Botão B volta para a tela anterior
+            if (tela_atual == TELA_CONEXAO) tela_atual = TELA_VALORES;
+            else if (tela_atual == TELA_VALORES) tela_atual = TELA_ABERTURA;
+            else if (tela_atual == TELA_ABERTURA) tela_atual = TELA_CONEXAO; // Volta para a última
+            
             precisa_atualizar_tela = true;
             ultimo_tempo_b = tempo_atual;
         }
@@ -172,8 +182,26 @@ void mostrar_tela_valores(ssd1306_t *tela, float temp_aht20, float temp_bmp280, 
     snprintf(buffer, sizeof(buffer), "Umidade: %.1f%%", umidade);
     ssd1306_draw_string(tela, buffer, 0, 42, false);
 
-    snprintf(buffer, sizeof(buffer), "Pressao:%.1fhPa", pressao / 100.0); // Converte de Pa para hPa
+    snprintf(buffer, sizeof(buffer), "Pressao: %.1fhPa", pressao / 100.0); // Converte de Pa para hPa
     ssd1306_draw_string(tela, buffer, 0, 52, false);
+
+    ssd1306_send_data(tela);
+}
+
+// Nova função para desenhar a tela de conexão
+void mostrar_tela_conexao(ssd1306_t *tela) {
+    ssd1306_fill(tela, 0);
+
+    const char *titulo = "Conexao";
+    uint8_t x_titulo = (TELA_LARGURA - (strlen(titulo) * 8)) / 2; // Centraliza o título
+    ssd1306_draw_string(tela, titulo, x_titulo, 0, false);
+
+    ssd1306_draw_string(tela, "TempSet:", 0, 10, false);
+    ssd1306_draw_string(tela, "UmidSet:", 0, 20, false);
+    ssd1306_draw_string(tela, "PresSet:", 0, 30, false);
+    ssd1306_draw_string(tela, "IP:", 0, 40, false);
+    ssd1306_draw_string(tela, "Status:", 0, 50, false);
+    // A linha "TempoRede" foi omitida por falta de espaço vertical (6 linhas já ocupam 60 pixels)
 
     ssd1306_send_data(tela);
 }
@@ -186,14 +214,16 @@ void atualizar_tela(ssd1306_t *tela, float temp_aht20, float temp_bmp280, float 
         case TELA_VALORES:
             mostrar_tela_valores(tela, temp_aht20, temp_bmp280, temp_media, umidade, pressao);
             break;
+        case TELA_CONEXAO: // Adiciona o caso para a nova tela
+            mostrar_tela_conexao(tela);
+            break;
         default:
             mostrar_tela_abertura(tela); // Tela padrão em caso de estado inválido
             break;
     }
 }
 
-void ler_e_exibir_dados(struct bmp280_calib_param *params_calibracao, float *temp_aht20, float *temp_bmp280, float *temp_media,
-     float *umidade, float *pressao) {
+void ler_e_exibir_dados(struct bmp280_calib_param *params_calibracao, float *temp_aht20, float *temp_bmp280, float *temp_media, float *umidade, float *pressao) {
     AHT20_Data dados_aht20;
     if (aht20_read(I2C_SENSORES_PORT, &dados_aht20)) {
         *temp_aht20 = dados_aht20.temperature;
