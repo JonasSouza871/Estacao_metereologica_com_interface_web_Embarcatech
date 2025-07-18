@@ -45,11 +45,15 @@
 #define DEBOUNCE_MS             250
 #define INTERVALO_LEITURA_MS    2000
 #define TAMANHO_GRAFICO         30
+#define TAMANHO_HISTORICO_WEB   100
 
-/* ---- Configurações de Setpoints ------------------------------- */
-float temperatura_setpoint = 25.0f;
-float umidade_setpoint = 60.0f;
-float pressao_setpoint = 1013.25f;
+/* ---- Configurações de Limites --------------------------------- */
+float temperatura_limite_inferior = 20.0f;
+float temperatura_limite_superior = 30.0f;
+float umidade_limite_inferior = 40.0f;
+float umidade_limite_superior = 80.0f;
+float pressao_limite_inferior = 1000.0f;
+float pressao_limite_superior = 1030.0f;
 
 /* ---- Status de Conexão ---------------------------------------- */
 bool wifi_conectado = false;
@@ -65,12 +69,21 @@ volatile float   fator_zoom_pressao = 1.0f;
 static uint64_t  ultimo_zoom_ms = 0;
 const  uint32_t  ZOOM_DEBOUNCE_MS = 120;
 
-// Buffers para os gráficos
+// Buffers para os gráficos do display
 float buffer_temperaturas[TAMANHO_GRAFICO];
 float buffer_umidade[TAMANHO_GRAFICO];
 float buffer_pressao[TAMANHO_GRAFICO];
 int   indice_buffer = 0;
 int   contador_buffer = 0;
+
+// Buffers para os gráficos web (histórico maior)
+float historico_temp_media[TAMANHO_HISTORICO_WEB];
+float historico_temp_aht[TAMANHO_HISTORICO_WEB];
+float historico_temp_bmp[TAMANHO_HISTORICO_WEB];
+float historico_umidade[TAMANHO_HISTORICO_WEB];
+float historico_pressao[TAMANHO_HISTORICO_WEB];
+int   indice_historico = 0;
+int   contador_historico = 0;
 
 // Variáveis para leituras dos sensores
 float temperatura_aht = 0, temperatura_bmp = 0, temperatura_media = 0;
@@ -78,7 +91,7 @@ float umidade = 0, pressao = 0;
 
 /* ---- Estrutura HTTP ------------------------------------------- */
 struct http_state {
-    char response[8192];
+    char response[16384];  // Aumentado para suportar mais dados
     size_t len;
     size_t sent;
 };
@@ -87,41 +100,204 @@ struct http_state {
 const char HTML_BODY[] =
     "<!DOCTYPE html><html><head><meta charset='UTF-8'><title>PicoAtmos - Monitor Atmosférico</title>"
     "<meta name='viewport' content='width=device-width, initial-scale=1.0'>"
+    "<script src='https://cdn.jsdelivr.net/npm/chart.js'></script>"
     "<style>"
     "body { font-family: sans-serif; text-align: center; padding: 20px; margin: 0; background: #f0f8ff; }"
-    ".container { max-width: 600px; margin: 0 auto; background: white; padding: 20px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }"
+    ".container { max-width: 1200px; margin: 0 auto; background: white; padding: 20px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }"
     "h1 { color: #2c3e50; margin-top: 0; }"
     ".sensor-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 15px; margin: 20px 0; }"
     ".sensor-card { background: #f8f9fa; padding: 15px; border-radius: 8px; border-left: 4px solid #3498db; }"
     ".sensor-value { font-size: 24px; font-weight: bold; color: #2c3e50; }"
     ".sensor-unit { font-size: 14px; color: #7f8c8d; }"
-    ".setpoint-container { margin: 20px 0; }"
-    ".setpoint-row { display: flex; justify-content: space-between; align-items: center; margin: 10px 0; }"
+    ".limits-container { margin: 20px 0; }"
+    ".limits-section { margin: 15px 0; padding: 15px; background: #f8f9fa; border-radius: 8px; }"
+    ".limits-title { font-weight: bold; margin-bottom: 10px; color: #2c3e50; }"
+    ".limits-row { display: flex; justify-content: space-between; align-items: center; margin: 8px 0; }"
+    ".limits-inputs { display: flex; gap: 10px; align-items: center; }"
     "input { padding: 8px; border: 1px solid #ddd; border-radius: 4px; width: 80px; }"
     "button { background: #2ecc71; color: white; border: none; padding: 8px 15px; border-radius: 4px; cursor: pointer; }"
     "button:hover { background: #27ae60; }"
     ".status-info { background: #ecf0f1; padding: 10px; border-radius: 4px; margin-top: 15px; }"
+    ".range-display { font-size: 14px; color: #7f8c8d; }"
+    ".charts-container { margin: 30px 0; }"
+    ".charts-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(400px, 1fr)); gap: 20px; }"
+    ".chart-card { background: #f8f9fa; padding: 20px; border-radius: 8px; border: 1px solid #ddd; }"
+    ".chart-title { font-weight: bold; margin-bottom: 15px; color: #2c3e50; text-align: center; }"
+    "canvas { max-width: 100%; height: 300px !important; }"
     "</style>"
     "<script>"
-    "function atualizarSetpoints() {"
-    "  const temp = document.getElementById('temp_setpoint').value;"
-    "  const umid = document.getElementById('umid_setpoint').value;"
-    "  const press = document.getElementById('press_setpoint').value;"
-    "  fetch('/set_setpoints?temp=' + temp + '&umid=' + umid + '&press=' + press)"
+    "let charts = {};"
+    "let chartData = {"
+    "  tempMedia: [], tempAht: [], tempBmp: [], umidade: [], pressao: [],"
+    "  labels: []"
+    "};"
+    
+    "function atualizarLimites() {"
+    "  const tempMin = document.getElementById('temp_min').value;"
+    "  const tempMax = document.getElementById('temp_max').value;"
+    "  const umidMin = document.getElementById('umid_min').value;"
+    "  const umidMax = document.getElementById('umid_max').value;"
+    "  const pressMin = document.getElementById('press_min').value;"
+    "  const pressMax = document.getElementById('press_max').value;"
+    "  fetch('/set_limits?temp_min=' + tempMin + '&temp_max=' + tempMax + '&umid_min=' + umidMin + '&umid_max=' + umidMax + '&press_min=' + pressMin + '&press_max=' + pressMax)"
     "    .then(response => response.text())"
     "    .then(data => console.log(data));"
     "}"
+    
+    "function criarGraficos() {"
+    "  const ctx1 = document.getElementById('chartTempMedia').getContext('2d');"
+    "  const ctx2 = document.getElementById('chartTempAht').getContext('2d');"
+    "  const ctx3 = document.getElementById('chartTempBmp').getContext('2d');"
+    "  const ctx4 = document.getElementById('chartUmidade').getContext('2d');"
+    "  const ctx5 = document.getElementById('chartPressao').getContext('2d');"
+    
+    "  charts.tempMedia = new Chart(ctx1, {"
+    "    type: 'line',"
+    "    data: {"
+    "      labels: chartData.labels,"
+    "      datasets: [{"
+    "        label: 'Temperatura Média (°C)',"
+    "        data: chartData.tempMedia,"
+    "        borderColor: '#e74c3c',"
+    "        backgroundColor: 'rgba(231, 76, 60, 0.1)',"
+    "        tension: 0.4"
+    "      }]"
+    "    },"
+    "    options: {"
+    "      responsive: true,"
+    "      maintainAspectRatio: false,"
+    "      scales: {"
+    "        y: { beginAtZero: false }"
+    "      }"
+    "    }"
+    "  });"
+    
+    "  charts.tempAht = new Chart(ctx2, {"
+    "    type: 'line',"
+    "    data: {"
+    "      labels: chartData.labels,"
+    "      datasets: [{"
+    "        label: 'Temperatura AHT20 (°C)',"
+    "        data: chartData.tempAht,"
+    "        borderColor: '#f39c12',"
+    "        backgroundColor: 'rgba(243, 156, 18, 0.1)',"
+    "        tension: 0.4"
+    "      }]"
+    "    },"
+    "    options: {"
+    "      responsive: true,"
+    "      maintainAspectRatio: false,"
+    "      scales: {"
+    "        y: { beginAtZero: false }"
+    "      }"
+    "    }"
+    "  });"
+    
+    "  charts.tempBmp = new Chart(ctx3, {"
+    "    type: 'line',"
+    "    data: {"
+    "      labels: chartData.labels,"
+    "      datasets: [{"
+    "        label: 'Temperatura BMP280 (°C)',"
+    "        data: chartData.tempBmp,"
+    "        borderColor: '#9b59b6',"
+    "        backgroundColor: 'rgba(155, 89, 182, 0.1)',"
+    "        tension: 0.4"
+    "      }]"
+    "    },"
+    "    options: {"
+    "      responsive: true,"
+    "      maintainAspectRatio: false,"
+    "      scales: {"
+    "        y: { beginAtZero: false }"
+    "      }"
+    "    }"
+    "  });"
+    
+    "  charts.umidade = new Chart(ctx4, {"
+    "    type: 'line',"
+    "    data: {"
+    "      labels: chartData.labels,"
+    "      datasets: [{"
+    "        label: 'Umidade (%)',"
+    "        data: chartData.umidade,"
+    "        borderColor: '#3498db',"
+    "        backgroundColor: 'rgba(52, 152, 219, 0.1)',"
+    "        tension: 0.4"
+    "      }]"
+    "    },"
+    "    options: {"
+    "      responsive: true,"
+    "      maintainAspectRatio: false,"
+    "      scales: {"
+    "        y: { beginAtZero: true, max: 100 }"
+    "      }"
+    "    }"
+    "  });"
+    
+    "  charts.pressao = new Chart(ctx5, {"
+    "    type: 'line',"
+    "    data: {"
+    "      labels: chartData.labels,"
+    "      datasets: [{"
+    "        label: 'Pressão (hPa)',"
+    "        data: chartData.pressao,"
+    "        borderColor: '#27ae60',"
+    "        backgroundColor: 'rgba(39, 174, 96, 0.1)',"
+    "        tension: 0.4"
+    "      }]"
+    "    },"
+    "    options: {"
+    "      responsive: true,"
+    "      maintainAspectRatio: false,"
+    "      scales: {"
+    "        y: { beginAtZero: false }"
+    "      }"
+    "    }"
+    "  });"
+    "}"
+    
+    "function atualizarGraficos(data) {"
+    "  const agora = new Date();"
+    "  const tempo = agora.toLocaleTimeString();"
+    
+    "  chartData.tempMedia.push(data.temp_media);"
+    "  chartData.tempAht.push(data.temp_aht);"
+    "  chartData.tempBmp.push(data.temp_bmp);"
+    "  chartData.umidade.push(data.umidade);"
+    "  chartData.pressao.push(data.pressao);"
+    "  chartData.labels.push(tempo);"
+    
+    "  const maxPoints = 50;"
+    "  if (chartData.labels.length > maxPoints) {"
+    "    chartData.tempMedia.shift();"
+    "    chartData.tempAht.shift();"
+    "    chartData.tempBmp.shift();"
+    "    chartData.umidade.shift();"
+    "    chartData.pressao.shift();"
+    "    chartData.labels.shift();"
+    "  }"
+    
+    "  Object.values(charts).forEach(chart => chart.update('none'));"
+    "}"
+    
     "function atualizarDados() {"
     "  fetch('/dados').then(res => res.json()).then(data => {"
     "    document.getElementById('temp_atual').innerText = data.temp_media.toFixed(1);"
     "    document.getElementById('umid_atual').innerText = data.umidade.toFixed(1);"
     "    document.getElementById('press_atual').innerText = data.pressao.toFixed(1);"
-    "    document.getElementById('temp_set_display').innerText = data.temp_setpoint.toFixed(1);"
-    "    document.getElementById('umid_set_display').innerText = data.umid_setpoint.toFixed(1);"
-    "    document.getElementById('press_set_display').innerText = data.press_setpoint.toFixed(1);"
+    "    document.getElementById('temp_range_display').innerText = data.temp_min.toFixed(1) + ' - ' + data.temp_max.toFixed(1);"
+    "    document.getElementById('umid_range_display').innerText = data.umid_min.toFixed(1) + ' - ' + data.umid_max.toFixed(1);"
+    "    document.getElementById('press_range_display').innerText = data.press_min.toFixed(1) + ' - ' + data.press_max.toFixed(1);"
+    "    atualizarGraficos(data);"
     "  });"
     "}"
-    "setInterval(atualizarDados, 2000);"
+    
+    "window.onload = function() {"
+    "  criarGraficos();"
+    "  atualizarDados();"
+    "  setInterval(atualizarDados, 2000);"
+    "};"
     "</script></head><body>"
     "<div class='container'>"
     "<h1>🌡️ PicoAtmos - Monitor Atmosférico</h1>"
@@ -141,21 +317,72 @@ const char HTML_BODY[] =
     "</div>"
     "</div>"
     
-    "<div class='setpoint-container'>"
-    "<h3>Configurações de Setpoint</h3>"
-    "<div class='setpoint-row'>"
-    "<span>Temperatura: <span id='temp_set_display'>--</span>°C</span>"
-    "<input type='number' id='temp_setpoint' step='0.1' value='25.0'>"
+    "<div class='limits-container'>"
+    "<h3>Configurações de Limites</h3>"
+    
+    "<div class='limits-section'>"
+    "<div class='limits-title'>Temperatura</div>"
+    "<div class='limits-row'>"
+    "<span>Faixa: <span id='temp_range_display' class='range-display'>--</span>°C</span>"
+    "<div class='limits-inputs'>"
+    "<input type='number' id='temp_min' step='0.1' value='20.0' placeholder='Mín'>"
+    "<span>-</span>"
+    "<input type='number' id='temp_max' step='0.1' value='30.0' placeholder='Máx'>"
     "</div>"
-    "<div class='setpoint-row'>"
-    "<span>Umidade: <span id='umid_set_display'>--</span>%</span>"
-    "<input type='number' id='umid_setpoint' step='1' value='60'>"
     "</div>"
-    "<div class='setpoint-row'>"
-    "<span>Pressão: <span id='press_set_display'>--</span>hPa</span>"
-    "<input type='number' id='press_setpoint' step='0.1' value='1013.25'>"
     "</div>"
-    "<button onclick='atualizarSetpoints()'>Salvar Configurações</button>"
+    
+    "<div class='limits-section'>"
+    "<div class='limits-title'>Umidade</div>"
+    "<div class='limits-row'>"
+    "<span>Faixa: <span id='umid_range_display' class='range-display'>--</span>%</span>"
+    "<div class='limits-inputs'>"
+    "<input type='number' id='umid_min' step='1' value='40' placeholder='Mín'>"
+    "<span>-</span>"
+    "<input type='number' id='umid_max' step='1' value='80' placeholder='Máx'>"
+    "</div>"
+    "</div>"
+    "</div>"
+    
+    "<div class='limits-section'>"
+    "<div class='limits-title'>Pressão</div>"
+    "<div class='limits-row'>"
+    "<span>Faixa: <span id='press_range_display' class='range-display'>--</span>hPa</span>"
+    "<div class='limits-inputs'>"
+    "<input type='number' id='press_min' step='0.1' value='1000.0' placeholder='Mín'>"
+    "<span>-</span>"
+    "<input type='number' id='press_max' step='0.1' value='1030.0' placeholder='Máx'>"
+    "</div>"
+    "</div>"
+    "</div>"
+    
+    "<button onclick='atualizarLimites()'>Salvar Limites</button>"
+    "</div>"
+    
+    "<div class='charts-container'>"
+    "<h3>Gráficos em Tempo Real</h3>"
+    "<div class='charts-grid'>"
+    "<div class='chart-card'>"
+    "<div class='chart-title'>Temperatura Média</div>"
+    "<canvas id='chartTempMedia'></canvas>"
+    "</div>"
+    "<div class='chart-card'>"
+    "<div class='chart-title'>Temperatura AHT20</div>"
+    "<canvas id='chartTempAht'></canvas>"
+    "</div>"
+    "<div class='chart-card'>"
+    "<div class='chart-title'>Temperatura BMP280</div>"
+    "<canvas id='chartTempBmp'></canvas>"
+    "</div>"
+    "<div class='chart-card'>"
+    "<div class='chart-title'>Umidade</div>"
+    "<canvas id='chartUmidade'></canvas>"
+    "</div>"
+    "<div class='chart-card'>"
+    "<div class='chart-title'>Pressão</div>"
+    "<canvas id='chartPressao'></canvas>"
+    "</div>"
+    "</div>"
     "</div>"
     
     "<div class='status-info'>"
@@ -210,12 +437,15 @@ static err_t http_recv(void *arg, struct tcp_pcb *tpcb, struct pbuf *p, err_t er
 
     // Responde com dados dos sensores em JSON
     if (strstr(req, "GET /dados")) {
-        char json_payload[256];
+        char json_payload[512];
         int json_len = snprintf(json_payload, sizeof(json_payload),
-                                "{\"temp_media\":%.2f,\"umidade\":%.2f,\"pressao\":%.2f,"
-                                "\"temp_setpoint\":%.2f,\"umid_setpoint\":%.2f,\"press_setpoint\":%.2f}",
-                                temperatura_media, umidade, pressao/100.0f,
-                                temperatura_setpoint, umidade_setpoint, pressao_setpoint);
+                                "{\"temp_media\":%.2f,\"temp_aht\":%.2f,\"temp_bmp\":%.2f,\"umidade\":%.2f,\"pressao\":%.2f,"
+                                "\"temp_min\":%.2f,\"temp_max\":%.2f,\"umid_min\":%.2f,\"umid_max\":%.2f,"
+                                "\"press_min\":%.2f,\"press_max\":%.2f}",
+                                temperatura_media, temperatura_aht, temperatura_bmp, umidade, pressao/100.0f,
+                                temperatura_limite_inferior, temperatura_limite_superior,
+                                umidade_limite_inferior, umidade_limite_superior,
+                                pressao_limite_inferior, pressao_limite_superior);
 
         hs->len = snprintf(hs->response, sizeof(hs->response),
                            "HTTP/1.1 200 OK\r\n"
@@ -226,15 +456,20 @@ static err_t http_recv(void *arg, struct tcp_pcb *tpcb, struct pbuf *p, err_t er
                            "%s",
                            json_len, json_payload);
     }
-    // Atualiza setpoints via requisição HTTP
-    else if (strstr(req, "GET /set_setpoints")) {
-        float temp, umid, press;
-        sscanf(req, "GET /set_setpoints?temp=%f&umid=%f&press=%f", &temp, &umid, &press);
-        temperatura_setpoint = temp;
-        umidade_setpoint = umid;
-        pressao_setpoint = press;
+    // Atualiza limites via requisição HTTP
+    else if (strstr(req, "GET /set_limits")) {
+        float temp_min, temp_max, umid_min, umid_max, press_min, press_max;
+        sscanf(req, "GET /set_limits?temp_min=%f&temp_max=%f&umid_min=%f&umid_max=%f&press_min=%f&press_max=%f", 
+               &temp_min, &temp_max, &umid_min, &umid_max, &press_min, &press_max);
+        
+        temperatura_limite_inferior = temp_min;
+        temperatura_limite_superior = temp_max;
+        umidade_limite_inferior = umid_min;
+        umidade_limite_superior = umid_max;
+        pressao_limite_inferior = press_min;
+        pressao_limite_superior = press_max;
 
-        const char *txt = "Setpoints atualizados";
+        const char *txt = "Limites atualizados";
         hs->len = snprintf(hs->response, sizeof(hs->response),
                            "HTTP/1.1 200 OK\r\n"
                            "Content-Type: text/plain\r\n"
@@ -310,13 +545,23 @@ int main() {
                                &temperatura_media, &umidade, &pressao);
             proxima_leitura = time_us_64() + INTERVALO_LEITURA_MS * 1000;
 
-            // Armazena os dados nos buffers circulares
+            // Armazena os dados nos buffers circulares do display
             buffer_temperaturas[indice_buffer] = temperatura_media;
             buffer_umidade[indice_buffer] = umidade;
             buffer_pressao[indice_buffer] = pressao / 100.0f;
             
             indice_buffer = (indice_buffer + 1) % TAMANHO_GRAFICO;
             if (contador_buffer < TAMANHO_GRAFICO) contador_buffer++;
+
+            // Armazena os dados no histórico web
+            historico_temp_media[indice_historico] = temperatura_media;
+            historico_temp_aht[indice_historico] = temperatura_aht;
+            historico_temp_bmp[indice_historico] = temperatura_bmp;
+            historico_umidade[indice_historico] = umidade;
+            historico_pressao[indice_historico] = pressao / 100.0f;
+            
+            indice_historico = (indice_historico + 1) % TAMANHO_HISTORICO_WEB;
+            if (contador_historico < TAMANHO_HISTORICO_WEB) contador_historico++;
 
             // Atualiza a tela se estiver exibindo dados que mudam com o tempo
             if (tela_atual == TELA_VALORES || tela_atual == TELA_GRAFICO || 
