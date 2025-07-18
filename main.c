@@ -707,10 +707,47 @@ void mostrar_tela_conexao(ssd1306_t *tela) {
 
     char buffer[32];
     snprintf(buffer, sizeof(buffer), "IP: %s", ip_endereco);
-    ssd1306_draw_string(tela, buffer, 0, 25, false);
+    ssd1306_draw_string(tela, buffer, 0, 12, false);
 
-    snprintf(buffer, sizeof(buffer), "WiFi: %s", wifi_conectado ? "CONECTADO" : "DESCONECTADO");
-    ssd1306_draw_string(tela, buffer, 0, 40, false);
+    snprintf(buffer, sizeof(buffer), "WiFi: %s", wifi_conectado ? "OK" : "ERRO");
+    ssd1306_draw_string(tela, buffer, 0, 22, false);
+
+    // Status da Temperatura
+    const char *status_temp;
+    if (temperatura_media < temperatura_limite_inferior) {
+        status_temp = "Abaixo";
+    } else if (temperatura_media > temperatura_limite_superior) {
+        status_temp = "Acima";
+    } else {
+        status_temp = "Normal";
+    }
+    snprintf(buffer, sizeof(buffer), "Est.Temp: %s", status_temp);
+    ssd1306_draw_string(tela, buffer, 0, 32, false);
+
+    // Status da Umidade
+    const char *status_umid;
+    if (umidade < umidade_limite_inferior) {
+        status_umid = "Abaixo";
+    } else if (umidade > umidade_limite_superior) {
+        status_umid = "Acima";
+    } else {
+        status_umid = "Normal";
+    }
+    snprintf(buffer, sizeof(buffer), "Est.Umid: %s", status_umid);
+    ssd1306_draw_string(tela, buffer, 0, 42, false);
+
+    // Status da Pressão
+    const char *status_press;
+    float pressao_hpa = pressao / 100.0f;
+    if (pressao_hpa < pressao_limite_inferior) {
+        status_press = "Abaixo";
+    } else if (pressao_hpa > pressao_limite_superior) {
+        status_press = "Acima";
+    } else {
+        status_press = "Normal";
+    }
+    snprintf(buffer, sizeof(buffer), "Est.Press: %s", status_press);
+    ssd1306_draw_string(tela, buffer, 0, 52, false);
 
     ssd1306_send_data(tela);
 }
@@ -835,7 +872,6 @@ void mostrar_tela_umidade(ssd1306_t *tela) {
         if (num_marcacoes++ >= 4) break;
         uint8_t y = gy - (uint8_t)(((val - ymin_marcacao) / faixa_visivel) * H);
         if (y > gy || y < (gy - H)) continue;
-
         ssd1306_hline(tela, gx - 2, gx, y, true);
         snprintf(buffer, sizeof(buffer), "%.0f", val);
         ssd1306_draw_string(tela, buffer, 0, y - 4, false);
