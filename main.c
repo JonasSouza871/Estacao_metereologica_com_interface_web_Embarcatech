@@ -11,10 +11,13 @@
 #include "hardware/adc.h"
 #include "hardware/irq.h"
 #include "lwip/tcp.h"
+
+// Inclusões do projeto
 #include "aht20.h"
 #include "bmp280.h"
 #include "ssd1306.h"
 #include "font.h"
+#include "matriz_led.h" // <-- NOVA INCLUSÃO DA BIBLIOTECA DA MATRIZ
 
 /* ---- Configurações de Hardware -------------------------------- */
 #define I2C_SENSORES_PORT i2c0
@@ -65,6 +68,7 @@ float pressao_limite_superior = 1030.0f;
 bool wifi_conectado = false;
 char ip_endereco[24] = "Desconectado";
 
+/* ---- Variáveis de Controle ------------------------------------ */
 volatile uint8_t tela_atual = TELA_ABERTURA;
 volatile bool atualizar_tela_flag = true;
 volatile float fator_zoom = 1.0f;
@@ -72,6 +76,9 @@ volatile float fator_zoom_umidade = 1.0f;
 volatile float fator_zoom_pressao = 1.0f;
 static uint64_t ultimo_zoom_ms = 0;
 const uint32_t ZOOM_DEBOUNCE_MS = 120;
+
+// Variável global para armazenar o estado atual do sistema
+volatile EstadoSistema estado_global = ESTADO_NORMAL;
 
 // Buffers para os gráficos do display
 float buffer_temperaturas[TAMANHO_GRAFICO];
@@ -98,7 +105,7 @@ struct http_state {
     size_t sent;
 };
 
-/* ---- Página HTML ---------------------------------------------- */
+/* ---- Página HTML (sem alterações) ----------------------------- */
 const char HTML_BODY[] =
     "<!DOCTYPE html><html><head><meta charset='UTF-8'><title>PicoAtmos - Monitor Atmosférico</title>"
     "<meta name='viewport' content='width=device-width, initial-scale=1.0'>"
@@ -409,10 +416,15 @@ void atualizar_tela(ssd1306_t *, float, float, float, float, float);
 void ler_e_exibir_dados(struct bmp280_calib_param *, float *, float *, float *, float *, float *);
 void callback_botoes(uint, uint32_t);
 void callback_joystick(void);
-void atualizar_leds_rgb(void);
-const char* obter_status_led_atual(void);
 
-/* ---------------- Funções de Servidor HTTP --------------------- */
+// Funções novas e modificadas
+EstadoSistema obter_estado_sistema(void);
+void atualizar_leds_rgb(EstadoSistema estado);
+const char* estado_para_string_cor(EstadoSistema estado);
+const char* estado_para_string_animacao(EstadoSistema estado);
+
+
+/* ---------------- Funções de Servidor HTTP (sem alterações) ---- */
 static err_t http_sent(void *arg, struct tcp_pcb *tpcb, u16_t len) {
     struct http_state *hs = (struct http_state *)arg;
     hs->sent += len;
@@ -514,99 +526,116 @@ static void start_http_server(void) {
     printf("Servidor HTTP rodando na porta 80...\n");
 }
 
-/* ---------------- Função para Obter Status LED ----------------- */
-const char* obter_status_led_atual(void) {
-    // Verifica alertas seguindo a prioridade da árvore de decisão
+/* ---------------- Funções de Lógica de Estado ----------------- */
+
+/**
+ * @brief Determina o estado atual do sistema com base nas leituras dos sensores.
+ * A prioridade é: Temperatura > Umidade > Pressão.
+ * @return O estado atual do sistema (enum EstadoSistema).
+ */
+EstadoSistema obter_estado_sistema(void) {
     float pressao_hpa = pressao / 100.0f;
     
-    // Alerta de Temperatura (prioridade alta)
-    if (temperatura_media > temperatura_limite_superior) {
-        return "Vermelho";
-    }
-    if (temperatura_media < temperatura_limite_inferior) {
-        return "Azul";
-    }
+    // Prioridade 1: Temperatura
+    if (temperatura_media > temperatura_limite_superior) return ESTADO_TEMP_ALTA;
+    if (temperatura_media < temperatura_limite_inferior) return ESTADO_TEMP_BAIXA;
     
-    // Alerta de Umidade (prioridade média)
-    if (umidade > umidade_limite_superior) {
-        return "Roxo";
-    }
-    if (umidade < umidade_limite_inferior) {
-        return "Amarelo";
-    }
+    // Prioridade 2: Umidade
+    if (umidade > umidade_limite_superior) return ESTADO_UMID_ALTA;
+    if (umidade < umidade_limite_inferior) return ESTADO_UMID_BAIXA;
     
-    // Alerta de Pressão (prioridade baixa)
-    if (pressao_hpa > pressao_limite_superior) {
-        return "Branco";
-    }
-    if (pressao_hpa < pressao_limite_inferior) {
-        return "Sem cor";
-    }
+    // Prioridade 3: Pressão
+    if (pressao_hpa > pressao_limite_superior) return ESTADO_PRESS_ALTA;
+    if (pressao_hpa < pressao_limite_inferior) return ESTADO_PRESS_BAIXA;
     
-    // Tudo Normal
-    return "Verde";
+    // Se nenhum limite foi ultrapassado
+    return ESTADO_NORMAL;
+}
+
+/**
+ * @brief Converte o enum EstadoSistema para uma string de cor para exibição.
+ */
+const char* estado_para_string_cor(EstadoSistema estado) {
+    switch (estado) {
+        case ESTADO_NORMAL:       return "Verde";
+        case ESTADO_TEMP_ALTA:    return "Vermelho";
+        case ESTADO_TEMP_BAIXA:   return "Azul";
+        case ESTADO_UMID_ALTA:    return "Roxo";
+        case ESTADO_UMID_BAIXA:   return "Amarelo";
+        case ESTADO_PRESS_ALTA:   return "Branco";
+        case ESTADO_PRESS_BAIXA:  return "Cinza (Matriz)";
+        default:                  return "Desconhecido";
+    }
+}
+
+/**
+ * @brief Converte o enum EstadoSistema para uma string de animação para exibição.
+ */
+const char* estado_para_string_animacao(EstadoSistema estado) {
+    switch (estado) {
+        case ESTADO_NORMAL:       return "Icone OK (v)";
+        case ESTADO_TEMP_ALTA:    return "Icone Alerta (!)";
+        case ESTADO_TEMP_BAIXA:   return "Animacao Chuva";
+        case ESTADO_UMID_ALTA:    return "Animacao Chuva";
+        case ESTADO_UMID_BAIXA:   return "Icone Alerta (!)";
+        case ESTADO_PRESS_ALTA:   return "Icone OK (v)";
+        case ESTADO_PRESS_BAIXA:  return "Icone Erro (X)";
+        default:                  return "Nenhuma";
+    }
 }
 
 /* ---------------- Função de Controle dos LEDs RGB -------------- */
-void atualizar_leds_rgb(void) {
+/**
+ * @brief Atualiza o LED RGB com base no estado atual do sistema.
+ * @param estado O estado atual do sistema.
+ */
+void atualizar_leds_rgb(EstadoSistema estado) {
     // Desliga todos os LEDs primeiro
     gpio_put(LED_VERDE_PIN, 0);
     gpio_put(LED_AZUL_PIN, 0);
     gpio_put(LED_VERMELHO_PIN, 0);
     
-    // Verifica alertas seguindo a prioridade da árvore de decisão
-    float pressao_hpa = pressao / 100.0f;
-    
-    // Alerta de Temperatura (prioridade alta)
-    if (temperatura_media > temperatura_limite_superior) {
-        // Temperatura Alta -> LED Vermelho
-        gpio_put(LED_VERMELHO_PIN, 1);
-        return;
+    switch (estado) {
+        case ESTADO_NORMAL:
+            gpio_put(LED_VERDE_PIN, 1); // Verde
+            break;
+        case ESTADO_TEMP_ALTA:
+            gpio_put(LED_VERMELHO_PIN, 1); // Vermelho
+            break;
+        case ESTADO_TEMP_BAIXA:
+            gpio_put(LED_AZUL_PIN, 1); // Azul
+            break;
+        case ESTADO_UMID_ALTA:
+            gpio_put(LED_AZUL_PIN, 1);    // Roxo (Azul + Vermelho)
+            gpio_put(LED_VERMELHO_PIN, 1);
+            break;
+        case ESTADO_UMID_BAIXA:
+            gpio_put(LED_VERDE_PIN, 1);   // Amarelo (Verde + Vermelho)
+            gpio_put(LED_VERMELHO_PIN, 1);
+            break;
+        case ESTADO_PRESS_ALTA:
+            gpio_put(LED_VERDE_PIN, 1);   // Branco (Verde + Azul + Vermelho)
+            gpio_put(LED_AZUL_PIN, 1);
+            gpio_put(LED_VERMELHO_PIN, 1);
+            break;
+        case ESTADO_PRESS_BAIXA:
+            // Para pressão baixa, o LED RGB fica desligado, e a matriz fica cinza.
+            break;
     }
-    if (temperatura_media < temperatura_limite_inferior) {
-        // Temperatura Baixa -> LED Azul
-        gpio_put(LED_AZUL_PIN, 1);
-        return;
-    }
-    
-    // Alerta de Umidade (prioridade média)
-    if (umidade > umidade_limite_superior) {
-        // Umidade Alta -> LED Roxo (Azul + Vermelho)
-        gpio_put(LED_AZUL_PIN, 1);
-        gpio_put(LED_VERMELHO_PIN, 1);
-        return;
-    }
-    if (umidade < umidade_limite_inferior) {
-        // Umidade Baixa -> LED Amarelo (Verde + Vermelho)
-        gpio_put(LED_VERDE_PIN, 1);
-        gpio_put(LED_VERMELHO_PIN, 1);
-        return;
-    }
-    
-    // Alerta de Pressão (prioridade baixa)
-    if (pressao_hpa > pressao_limite_superior) {
-        // Pressão Alta -> LED Branco (Verde + Azul + Vermelho)
-        gpio_put(LED_VERDE_PIN, 1);
-        gpio_put(LED_AZUL_PIN, 1);
-        gpio_put(LED_VERMELHO_PIN, 1);
-        return;
-    }
-    if (pressao_hpa < pressao_limite_inferior) {
-        // Pressão Baixa -> Sem cor (todos desligados)
-        return;
-    }
-    
-    // Tudo Normal -> LED Verde
-    gpio_put(LED_VERDE_PIN, 1);
 }
 
 /* ================================================================ */
+/* -------------------------- FUNÇÃO MAIN ------------------------- */
+/* ================================================================ */
 int main() {
     stdio_init_all();
+    inicializar_matriz_led(); // <-- INICIALIZA A MATRIZ DE LED
     sleep_ms(2000);
+
     ssd1306_t tela;
     struct bmp280_calib_param parametros_bmp;
     uint64_t proxima_leitura = 0;
+
     configurar_perifericos(&tela, &parametros_bmp);
     configurar_botoes();
     configurar_joystick();
@@ -617,29 +646,39 @@ int main() {
         if (wifi_conectado) {
             cyw43_arch_poll();
         }
+
+        // Bloco de leitura e atualização de estado (a cada 2 segundos)
         if (time_us_64() >= proxima_leitura) {
             ler_e_exibir_dados(&parametros_bmp, &temperatura_aht, &temperatura_bmp, &temperatura_media, &umidade, &pressao);
             proxima_leitura = time_us_64() + INTERVALO_LEITURA_MS * 1000;
+            
+            // Atualiza buffers de gráficos
             buffer_temperaturas[indice_buffer] = temperatura_media;
             buffer_umidade[indice_buffer] = umidade;
             buffer_pressao[indice_buffer] = pressao / 100.0f;
-
             indice_buffer = (indice_buffer + 1) % TAMANHO_GRAFICO;
             if (contador_buffer < TAMANHO_GRAFICO) contador_buffer++;
+            
             historico_temp_media[indice_historico] = temperatura_media;
             historico_umidade[indice_historico] = umidade;
             historico_pressao[indice_historico] = pressao / 100.0f;
-
             indice_historico = (indice_historico + 1) % TAMANHO_HISTORICO_WEB;
             if (contador_historico < TAMANHO_HISTORICO_WEB) contador_historico++;
             
-            // Atualiza os LEDs RGB baseado no estado do sistema
-            atualizar_leds_rgb();
+            // --- NOVA LÓGICA DE ATUALIZAÇÃO ---
+            estado_global = obter_estado_sistema(); // Determina o estado atual
+            atualizar_leds_rgb(estado_global);      // Atualiza o LED RGB simples
             
+            // Sinaliza para a tela OLED ser atualizada, se necessário
             if (tela_atual == TELA_VALORES || tela_atual == TELA_GRAFICO || tela_atual == TELA_UMIDADE || tela_atual == TELA_PRESSAO || tela_atual == TELA_LED_STATUS)
                 atualizar_tela_flag = true;
         }
 
+        // --- ATUALIZAÇÃO CONTÍNUA DA MATRIZ ---
+        // Chamado em cada iteração do loop para permitir animações fluidas
+        atualizar_matriz_pelo_estado(estado_global);
+
+        // Atualiza a tela OLED se a flag estiver ativa
         if (atualizar_tela_flag) {
             atualizar_tela(&tela, temperatura_aht, temperatura_bmp, temperatura_media, umidade, pressao);
             atualizar_tela_flag = false;
@@ -651,7 +690,7 @@ int main() {
     return 0;
 }
 
-/* ---------------- Inicialização -------------------------------- */
+/* ---------------- Inicialização (sem alterações) --------------- */
 void configurar_perifericos(ssd1306_t *tela, struct bmp280_calib_param *parametros) {
     i2c_init(I2C_SENSORES_PORT, 100 * 1000);
     gpio_set_function(I2C_SENSORES_SDA_PIN, GPIO_FUNC_I2C);
@@ -688,7 +727,6 @@ void configurar_joystick(void) {
 }
 
 void configurar_leds_rgb(void) {
-    // Configura os pinos dos LEDs como saída
     gpio_init(LED_VERDE_PIN);
     gpio_set_dir(LED_VERDE_PIN, GPIO_OUT);
     gpio_put(LED_VERDE_PIN, 0);
@@ -737,7 +775,7 @@ void configurar_wifi(ssd1306_t *tela) {
     sleep_ms(2000);
 }
 
-/* ---------------- Callbacks de Interrupção --------------------- */
+/* ---------------- Callbacks de Interrupção (sem alterações) ---- */
 void callback_botoes(uint gpio, uint32_t eventos) {
     static uint64_t ultimo_pressionamento_a = 0, ultimo_pressionamento_b = 0;
     uint64_t agora = time_us_64();
@@ -868,39 +906,42 @@ void mostrar_tela_conexao(ssd1306_t *tela) {
     ssd1306_send_data(tela);
 }
 
+/**
+ * @brief (MODIFICADA) Mostra o status do LED RGB e da Matriz na tela OLED.
+ */
 void mostrar_tela_led_status(ssd1306_t *tela) {
     ssd1306_fill(tela, 0);
     
-    // Título centralizado
-    const char *titulo = "Status LED RGB";
-    int titulo_largura = strlen(titulo) * 8;
-    ssd1306_draw_string(tela, titulo, (TELA_LARGURA - titulo_largura) / 2, 0, false);
+    const char *titulo = "Status (LED/Matriz)";
+    ssd1306_draw_string(tela, titulo, (TELA_LARGURA - strlen(titulo) * 8) / 2, 0, false);
+    ssd1306_hline(tela, 0, TELA_LARGURA, 10, true);
     
-    // Linha separadora
-    ssd1306_hline(tela, 10, TELA_LARGURA - 10, 15, true);
+    // Busca o estado atual e converte para strings
+    const char *cor_str = estado_para_string_cor(estado_global);
+    const char *anim_str = estado_para_string_animacao(estado_global);
     
-    // Cor atual do LED
-    const char *cor_atual = obter_status_led_atual();
-    char buffer[32];
-    snprintf(buffer, sizeof(buffer), "Cor Atual:");
-    ssd1306_draw_string(tela, buffer, 10, 25, false);
+    char buffer[40];
+    snprintf(buffer, sizeof(buffer), "Cor: %s", cor_str);
+    ssd1306_draw_string(tela, buffer, 5, 20, false);
     
-    // Destacar a cor atual
-    int cor_largura = strlen(cor_atual) * 8;
-    ssd1306_draw_string(tela, cor_atual, (TELA_LARGURA - cor_largura) / 2, 40, false);
+    snprintf(buffer, sizeof(buffer), "Matriz: %s", anim_str);
+    ssd1306_draw_string(tela, buffer, 5, 35, false);
     
-    // Retângulo ao redor da cor
-    int cor_x = (TELA_LARGURA - cor_largura) / 2 - 5;
-    ssd1306_rect(tela, cor_x, 38, cor_largura + 10, 12, 1, false);
+    // Mostra o status primário que causou o alerta
+    const char* status_primario = "Status: Normal";
+    if (estado_global == ESTADO_TEMP_ALTA) status_primario = "Causa: Temp. ALTA";
+    else if (estado_global == ESTADO_TEMP_BAIXA) status_primario = "Causa: Temp. BAIXA";
+    else if (estado_global == ESTADO_UMID_ALTA) status_primario = "Causa: Umid. ALTA";
+    else if (estado_global == ESTADO_UMID_BAIXA) status_primario = "Causa: Umid. BAIXA";
+    else if (estado_global == ESTADO_PRESS_ALTA) status_primario = "Causa: Press. ALTA";
+    else if (estado_global == ESTADO_PRESS_BAIXA) status_primario = "Causa: Press. BAIXA";
     
-    // Informação adicional
-    snprintf(buffer, sizeof(buffer), "Baseado nos sensores");
-    int info_largura = strlen(buffer) * 6;
-    ssd1306_draw_string(tela, buffer, (TELA_LARGURA - info_largura) / 2, 55, true);
+    ssd1306_draw_string(tela, status_primario, 5, 50, true);
     
     ssd1306_send_data(tela);
 }
 
+// Funções de gráfico (sem alterações)
 void mostrar_tela_grafico(ssd1306_t *tela) {
     ssd1306_fill(tela, 0);
     const uint8_t gx = 20, gy = 52, H = 40, W = 105;
