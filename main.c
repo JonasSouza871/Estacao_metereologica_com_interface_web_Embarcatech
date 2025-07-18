@@ -270,7 +270,7 @@ static err_t connection_callback(void *arg, struct tcp_pcb *newpcb, err_t err) {
     return ERR_OK;
 }
 
-void start_http_server(void) {
+static void start_http_server(void) {
     struct tcp_pcb *pcb = tcp_new();
     if (!pcb) {
         printf("Erro ao criar PCB TCP\n");
@@ -497,20 +497,14 @@ void mostrar_tela_valores(ssd1306_t *tela, float temp_aht, float temp_bmp, float
 
 void mostrar_tela_conexao(ssd1306_t *tela) {
     ssd1306_fill(tela, 0);
-    const char *cabecalho = "Conexao";
+    const char *cabecalho = "Status da Rede";
     ssd1306_draw_string(tela, cabecalho, (TELA_LARGURA - strlen(cabecalho) * 8) / 2, 0, false);
     
     char buffer[32];
-    snprintf(buffer, sizeof(buffer), "TempSet: %.1fC", temperatura_setpoint);
-    ssd1306_draw_string(tela, buffer, 0, 10, false);
-    snprintf(buffer, sizeof(buffer), "UmidSet: %.1f%%", umidade_setpoint);
-    ssd1306_draw_string(tela, buffer, 0, 20, false);
-    snprintf(buffer, sizeof(buffer), "PresSet: %.1fhPa", pressao_setpoint);
-    ssd1306_draw_string(tela, buffer, 0, 30, false);
     snprintf(buffer, sizeof(buffer), "IP: %s", ip_endereco);
+    ssd1306_draw_string(tela, buffer, 0, 25, false);
+    snprintf(buffer, sizeof(buffer), "WiFi: %s", wifi_conectado ? "CONECTADO" : "DESCONECTADO");
     ssd1306_draw_string(tela, buffer, 0, 40, false);
-    snprintf(buffer, sizeof(buffer), "WiFi: %s", wifi_conectado ? "OK" : "ERRO");
-    ssd1306_draw_string(tela, buffer, 0, 50, false);
     ssd1306_send_data(tela);
 }
 
