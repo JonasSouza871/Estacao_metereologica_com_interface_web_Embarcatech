@@ -8,6 +8,7 @@ set(sdkVersion 2.1.0)
 set(toolchainVersion 13_3_Rel1)
 set(picotoolVersion 2.1.0)
 set(picoVscode ${USERHOME}/.pico-sdk/cmake/pico-vscode.cmake)
+
 if (EXISTS ${picoVscode})
     include(${picoVscode})
 endif()
@@ -48,15 +49,17 @@ add_executable(EstacaoMeteorologica_PicoW
     lib/Matriz_Bibliotecas/matriz_led.c
     lib/aht20.c
     lib/bmp280.c
+    lib/lwipopts_examples_common.h
+    lib/lwipopts.h
 )
 
-# Vincula as bibliotecas padrão (sem Wi-Fi)
 target_link_libraries(EstacaoMeteorologica_PicoW
     pico_stdlib
     hardware_i2c
     hardware_pwm
     hardware_pio
     hardware_adc
+    pico_cyw43_arch_lwip_threadsafe_background
 )
 
 # Habilita saída padrão via USB e UART
