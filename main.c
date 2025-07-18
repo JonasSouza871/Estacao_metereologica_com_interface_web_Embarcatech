@@ -46,7 +46,8 @@
 #define TELA_GRAFICO 3
 #define TELA_UMIDADE 4
 #define TELA_PRESSAO 5
-#define NUM_TELAS 6
+#define TELA_LED_STATUS 6
+#define NUM_TELAS 7
 #define DEBOUNCE_MS 250
 #define INTERVALO_LEITURA_MS 2000
 #define TAMANHO_GRAFICO 30
@@ -403,11 +404,13 @@ void mostrar_tela_conexao(ssd1306_t *);
 void mostrar_tela_grafico(ssd1306_t *);
 void mostrar_tela_umidade(ssd1306_t *);
 void mostrar_tela_pressao(ssd1306_t *);
+void mostrar_tela_led_status(ssd1306_t *);
 void atualizar_tela(ssd1306_t *, float, float, float, float, float);
 void ler_e_exibir_dados(struct bmp280_calib_param *, float *, float *, float *, float *, float *);
 void callback_botoes(uint, uint32_t);
 void callback_joystick(void);
 void atualizar_leds_rgb(void);
+const char* obter_status_led_atual(void);
 
 /* ---------------- Funções de Servidor HTTP --------------------- */
 static err_t http_sent(void *arg, struct tcp_pcb *tpcb, u16_t len) {
@@ -511,6 +514,39 @@ static void start_http_server(void) {
     printf("Servidor HTTP rodando na porta 80...\n");
 }
 
+/* ---------------- Função para Obter Status LED ----------------- */
+const char* obter_status_led_atual(void) {
+    // Verifica alertas seguindo a prioridade da árvore de decisão
+    float pressao_hpa = pressao / 100.0f;
+    
+    // Alerta de Temperatura (prioridade alta)
+    if (temperatura_media > temperatura_limite_superior) {
+        return "Vermelho";
+    }
+    if (temperatura_media < temperatura_limite_inferior) {
+        return "Azul";
+    }
+    
+    // Alerta de Umidade (prioridade média)
+    if (umidade > umidade_limite_superior) {
+        return "Roxo";
+    }
+    if (umidade < umidade_limite_inferior) {
+        return "Amarelo";
+    }
+    
+    // Alerta de Pressão (prioridade baixa)
+    if (pressao_hpa > pressao_limite_superior) {
+        return "Branco";
+    }
+    if (pressao_hpa < pressao_limite_inferior) {
+        return "Sem cor";
+    }
+    
+    // Tudo Normal
+    return "Verde";
+}
+
 /* ---------------- Função de Controle dos LEDs RGB -------------- */
 void atualizar_leds_rgb(void) {
     // Desliga todos os LEDs primeiro
@@ -600,7 +636,7 @@ int main() {
             // Atualiza os LEDs RGB baseado no estado do sistema
             atualizar_leds_rgb();
             
-            if (tela_atual == TELA_VALORES || tela_atual == TELA_GRAFICO || tela_atual == TELA_UMIDADE || tela_atual == TELA_PRESSAO)
+            if (tela_atual == TELA_VALORES || tela_atual == TELA_GRAFICO || tela_atual == TELA_UMIDADE || tela_atual == TELA_PRESSAO || tela_atual == TELA_LED_STATUS)
                 atualizar_tela_flag = true;
         }
 
@@ -829,6 +865,39 @@ void mostrar_tela_conexao(ssd1306_t *tela) {
     snprintf(buffer, sizeof(buffer), "Est.Press: %s", status_press);
     ssd1306_draw_string(tela, buffer, 0, 52, false);
 
+    ssd1306_send_data(tela);
+}
+
+void mostrar_tela_led_status(ssd1306_t *tela) {
+    ssd1306_fill(tela, 0);
+    
+    // Título centralizado
+    const char *titulo = "Status LED RGB";
+    int titulo_largura = strlen(titulo) * 8;
+    ssd1306_draw_string(tela, titulo, (TELA_LARGURA - titulo_largura) / 2, 0, false);
+    
+    // Linha separadora
+    ssd1306_hline(tela, 10, TELA_LARGURA - 10, 15, true);
+    
+    // Cor atual do LED
+    const char *cor_atual = obter_status_led_atual();
+    char buffer[32];
+    snprintf(buffer, sizeof(buffer), "Cor Atual:");
+    ssd1306_draw_string(tela, buffer, 10, 25, false);
+    
+    // Destacar a cor atual
+    int cor_largura = strlen(cor_atual) * 8;
+    ssd1306_draw_string(tela, cor_atual, (TELA_LARGURA - cor_largura) / 2, 40, false);
+    
+    // Retângulo ao redor da cor
+    int cor_x = (TELA_LARGURA - cor_largura) / 2 - 5;
+    ssd1306_rect(tela, cor_x, 38, cor_largura + 10, 12, 1, false);
+    
+    // Informação adicional
+    snprintf(buffer, sizeof(buffer), "Baseado nos sensores");
+    int info_largura = strlen(buffer) * 6;
+    ssd1306_draw_string(tela, buffer, (TELA_LARGURA - info_largura) / 2, 55, true);
+    
     ssd1306_send_data(tela);
 }
 
@@ -1066,6 +1135,7 @@ void atualizar_tela(ssd1306_t *tela, float temp_aht, float temp_bmp, float temp_
         case TELA_GRAFICO: mostrar_tela_grafico(tela); break;
         case TELA_UMIDADE: mostrar_tela_umidade(tela); break;
         case TELA_PRESSAO: mostrar_tela_pressao(tela); break;
+        case TELA_LED_STATUS: mostrar_tela_led_status(tela); break;
     }
 }
 
