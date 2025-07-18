@@ -17,7 +17,7 @@
 #include "bmp280.h"
 #include "ssd1306.h"
 #include "font.h"
-#include "matriz_led.h" // <-- NOVA INCLUSÃO DA BIBLIOTECA DA MATRIZ
+#include "matriz_led.h" // <-- INCLUSÃO DA BIBLIOTECA DA MATRIZ
 
 /* ---- Configurações de Hardware -------------------------------- */
 #define I2C_SENSORES_PORT i2c0
@@ -578,7 +578,7 @@ const char* estado_para_string_animacao(EstadoSistema estado) {
         case ESTADO_TEMP_BAIXA:   return "Animacao Chuva";
         case ESTADO_UMID_ALTA:    return "Animacao Chuva";
         case ESTADO_UMID_BAIXA:   return "Icone Alerta (!)";
-        case ESTADO_PRESS_ALTA:   return "Icone OK (v)";
+        case ESTADO_PRESS_ALTA:   return "Quadrado";
         case ESTADO_PRESS_BAIXA:  return "Icone Erro (X)";
         default:                  return "Nenhuma";
     }
@@ -907,36 +907,36 @@ void mostrar_tela_conexao(ssd1306_t *tela) {
 }
 
 /**
- * @brief (MODIFICADA) Mostra o status do LED RGB e da Matriz na tela OLED.
+ * @brief (REVERTIDA) Mostra o status do LED RGB na tela OLED.
  */
 void mostrar_tela_led_status(ssd1306_t *tela) {
     ssd1306_fill(tela, 0);
     
-    const char *titulo = "Status (LED/Matriz)";
+    // Título centralizado
+    const char *titulo = "Status LED RGB";
     ssd1306_draw_string(tela, titulo, (TELA_LARGURA - strlen(titulo) * 8) / 2, 0, false);
-    ssd1306_hline(tela, 0, TELA_LARGURA, 10, true);
     
-    // Busca o estado atual e converte para strings
-    const char *cor_str = estado_para_string_cor(estado_global);
-    const char *anim_str = estado_para_string_animacao(estado_global);
+    // Linha separadora
+    ssd1306_hline(tela, 0, TELA_LARGURA, 12, true);
     
-    char buffer[40];
-    snprintf(buffer, sizeof(buffer), "Cor: %s", cor_str);
-    ssd1306_draw_string(tela, buffer, 5, 20, false);
+    // Busca o estado atual e converte para a string da cor do LED
+    const char *cor_atual = estado_para_string_cor(estado_global);
     
-    snprintf(buffer, sizeof(buffer), "Matriz: %s", anim_str);
-    ssd1306_draw_string(tela, buffer, 5, 35, false);
+    char buffer[32];
+    snprintf(buffer, sizeof(buffer), "Cor Atual:");
+    ssd1306_draw_string(tela, buffer, 10, 25, false);
     
-    // Mostra o status primário que causou o alerta
-    const char* status_primario = "Status: Normal";
-    if (estado_global == ESTADO_TEMP_ALTA) status_primario = "Causa: Temp. ALTA";
-    else if (estado_global == ESTADO_TEMP_BAIXA) status_primario = "Causa: Temp. BAIXA";
-    else if (estado_global == ESTADO_UMID_ALTA) status_primario = "Causa: Umid. ALTA";
-    else if (estado_global == ESTADO_UMID_BAIXA) status_primario = "Causa: Umid. BAIXA";
-    else if (estado_global == ESTADO_PRESS_ALTA) status_primario = "Causa: Press. ALTA";
-    else if (estado_global == ESTADO_PRESS_BAIXA) status_primario = "Causa: Press. BAIXA";
+    // Destaca a cor atual, centralizando-a
+    // Trata o caso especial da pressão baixa, onde o LED RGB fica desligado.
+    const char* cor_display = cor_atual;
+    if (estado_global == ESTADO_PRESS_BAIXA) {
+        cor_display = "Desligado";
+    }
+    ssd1306_draw_string(tela, cor_display, (TELA_LARGURA - strlen(cor_display) * 8) / 2, 40, false);
     
-    ssd1306_draw_string(tela, status_primario, 5, 50, true);
+    // Informação adicional
+    const char *info = "Baseado nos sensores";
+    ssd1306_draw_string(tela, info, (TELA_LARGURA - strlen(info) * 6) / 2, 55, true);
     
     ssd1306_send_data(tela);
 }

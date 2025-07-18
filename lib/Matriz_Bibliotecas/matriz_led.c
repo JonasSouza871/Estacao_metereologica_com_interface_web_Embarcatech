@@ -2,13 +2,11 @@
 #include <stdlib.h>
 
 /* ---------- Padrões (bitmaps 5x5) ---------- */
-// Padrão "✓" (OK) para Verde
-const uint8_t PAD_OK[5]  = {0b00001, 0b00010, 0b00100, 0b10100, 0b01000};
 // Padrão "!" (Alerta) para Vermelho / Amarelo
 const uint8_t PAD_EXC[5] = {0b00100, 0b00100, 0b00100, 0b00000, 0b00100};
 // Padrão "X" (Erro/Aviso) para Cinza
 const uint8_t PAD_X[5]   = {0b10001, 0b01010, 0b00100, 0b01010, 0b10001};
-// Padrão "Quadrado" (3x3 centralizado) para Branco
+// Padrão "Quadrado" (3x3 centralizado) para Branco e Verde
 const uint8_t PAD_QUADRADO[5] = {0b00000, 0b01110, 0b01110, 0b01110, 0b00000};
 
 
@@ -133,7 +131,7 @@ void atualizar_matriz_pelo_estado(EstadoSistema estado) {
             if (estado != estado_anterior) {
                 switch (estado) {
                     case ESTADO_NORMAL:
-                        matriz_draw_pattern(PAD_OK, COR_VERDE);
+                        matriz_draw_pattern(PAD_QUADRADO, COR_VERDE); // <-- ALTERADO AQUI
                         break;
                     case ESTADO_TEMP_ALTA:
                         matriz_draw_pattern(PAD_EXC, COR_VERMELHO);
@@ -142,7 +140,7 @@ void atualizar_matriz_pelo_estado(EstadoSistema estado) {
                         matriz_draw_pattern(PAD_EXC, COR_AMARELO);
                         break;
                     case ESTADO_PRESS_ALTA:
-                        matriz_draw_pattern(PAD_QUADRADO, COR_BRANCO); // <-- ALTERADO AQUI
+                        matriz_draw_pattern(PAD_QUADRADO, COR_BRANCO);
                         break;
                     case ESTADO_PRESS_BAIXA:
                         matriz_draw_pattern(PAD_X, COR_CINZA);
