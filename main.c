@@ -30,6 +30,11 @@
 #define BOTAO_B_PIN 6
 #define JOYSTICK_PIN 26
 
+/* ---- Configurações de LEDs RGB -------------------------------- */
+#define LED_VERDE_PIN 11
+#define LED_AZUL_PIN 12
+#define LED_VERMELHO_PIN 13
+
 /* ---- Configurações de Wi-Fi ----------------------------------- */
 #define WIFI_SSID "Jonas Souza"
 #define WIFI_PASS "12345678"
@@ -389,6 +394,7 @@ const char HTML_BODY[] =
 void configurar_perifericos(ssd1306_t *, struct bmp280_calib_param *);
 void configurar_botoes(void);
 void configurar_joystick(void);
+void configurar_leds_rgb(void);
 void configurar_wifi(ssd1306_t *);
 static void start_http_server(void);
 void mostrar_tela_abertura(ssd1306_t *);
@@ -401,6 +407,7 @@ void atualizar_tela(ssd1306_t *, float, float, float, float, float);
 void ler_e_exibir_dados(struct bmp280_calib_param *, float *, float *, float *, float *, float *);
 void callback_botoes(uint, uint32_t);
 void callback_joystick(void);
+void atualizar_leds_rgb(void);
 
 /* ---------------- Funções de Servidor HTTP --------------------- */
 static err_t http_sent(void *arg, struct tcp_pcb *tpcb, u16_t len) {
@@ -504,6 +511,59 @@ static void start_http_server(void) {
     printf("Servidor HTTP rodando na porta 80...\n");
 }
 
+/* ---------------- Função de Controle dos LEDs RGB -------------- */
+void atualizar_leds_rgb(void) {
+    // Desliga todos os LEDs primeiro
+    gpio_put(LED_VERDE_PIN, 0);
+    gpio_put(LED_AZUL_PIN, 0);
+    gpio_put(LED_VERMELHO_PIN, 0);
+    
+    // Verifica alertas seguindo a prioridade da árvore de decisão
+    float pressao_hpa = pressao / 100.0f;
+    
+    // Alerta de Temperatura (prioridade alta)
+    if (temperatura_media > temperatura_limite_superior) {
+        // Temperatura Alta -> LED Vermelho
+        gpio_put(LED_VERMELHO_PIN, 1);
+        return;
+    }
+    if (temperatura_media < temperatura_limite_inferior) {
+        // Temperatura Baixa -> LED Azul
+        gpio_put(LED_AZUL_PIN, 1);
+        return;
+    }
+    
+    // Alerta de Umidade (prioridade média)
+    if (umidade > umidade_limite_superior) {
+        // Umidade Alta -> LED Roxo (Azul + Vermelho)
+        gpio_put(LED_AZUL_PIN, 1);
+        gpio_put(LED_VERMELHO_PIN, 1);
+        return;
+    }
+    if (umidade < umidade_limite_inferior) {
+        // Umidade Baixa -> LED Amarelo (Verde + Vermelho)
+        gpio_put(LED_VERDE_PIN, 1);
+        gpio_put(LED_VERMELHO_PIN, 1);
+        return;
+    }
+    
+    // Alerta de Pressão (prioridade baixa)
+    if (pressao_hpa > pressao_limite_superior) {
+        // Pressão Alta -> LED Branco (Verde + Azul + Vermelho)
+        gpio_put(LED_VERDE_PIN, 1);
+        gpio_put(LED_AZUL_PIN, 1);
+        gpio_put(LED_VERMELHO_PIN, 1);
+        return;
+    }
+    if (pressao_hpa < pressao_limite_inferior) {
+        // Pressão Baixa -> Sem cor (todos desligados)
+        return;
+    }
+    
+    // Tudo Normal -> LED Verde
+    gpio_put(LED_VERDE_PIN, 1);
+}
+
 /* ================================================================ */
 int main() {
     stdio_init_all();
@@ -514,6 +574,7 @@ int main() {
     configurar_perifericos(&tela, &parametros_bmp);
     configurar_botoes();
     configurar_joystick();
+    configurar_leds_rgb();
     configurar_wifi(&tela);
 
     while (true) {
@@ -535,6 +596,10 @@ int main() {
 
             indice_historico = (indice_historico + 1) % TAMANHO_HISTORICO_WEB;
             if (contador_historico < TAMANHO_HISTORICO_WEB) contador_historico++;
+            
+            // Atualiza os LEDs RGB baseado no estado do sistema
+            atualizar_leds_rgb();
+            
             if (tela_atual == TELA_VALORES || tela_atual == TELA_GRAFICO || tela_atual == TELA_UMIDADE || tela_atual == TELA_PRESSAO)
                 atualizar_tela_flag = true;
         }
@@ -584,6 +649,21 @@ void configurar_joystick(void) {
     adc_init();
     adc_gpio_init(JOYSTICK_PIN);
     adc_select_input(0);
+}
+
+void configurar_leds_rgb(void) {
+    // Configura os pinos dos LEDs como saída
+    gpio_init(LED_VERDE_PIN);
+    gpio_set_dir(LED_VERDE_PIN, GPIO_OUT);
+    gpio_put(LED_VERDE_PIN, 0);
+    
+    gpio_init(LED_AZUL_PIN);
+    gpio_set_dir(LED_AZUL_PIN, GPIO_OUT);
+    gpio_put(LED_AZUL_PIN, 0);
+    
+    gpio_init(LED_VERMELHO_PIN);
+    gpio_set_dir(LED_VERMELHO_PIN, GPIO_OUT);
+    gpio_put(LED_VERMELHO_PIN, 0);
 }
 
 void configurar_wifi(ssd1306_t *tela) {
