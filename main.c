@@ -10,6 +10,7 @@
 #include "hardware/gpio.h"
 #include "hardware/adc.h"
 #include "hardware/irq.h"
+#include "hardware/pwm.h" // <-- NOVA INCLUSÃO PARA O BUZZER
 #include "lwip/tcp.h"
 
 // Inclusões do projeto
@@ -17,7 +18,7 @@
 #include "bmp280.h"
 #include "ssd1306.h"
 #include "font.h"
-#include "matriz_led.h" // <-- INCLUSÃO DA BIBLIOTECA DA MATRIZ
+#include "matriz_led.h"
 
 /* ---- Configurações de Hardware -------------------------------- */
 #define I2C_SENSORES_PORT i2c0
@@ -32,6 +33,7 @@
 #define BOTAO_A_PIN 5
 #define BOTAO_B_PIN 6
 #define JOYSTICK_PIN 26
+#define BUZZER_PIN 10 // <-- NOVO PINO PARA O BUZZER
 
 /* ---- Configurações de LEDs RGB -------------------------------- */
 #define LED_VERDE_PIN 11
@@ -77,17 +79,14 @@ volatile float fator_zoom_pressao = 1.0f;
 static uint64_t ultimo_zoom_ms = 0;
 const uint32_t ZOOM_DEBOUNCE_MS = 120;
 
-// Variável global para armazenar o estado atual do sistema
 volatile EstadoSistema estado_global = ESTADO_NORMAL;
 
-// Buffers para os gráficos do display
+// Buffers para os gráficos
 float buffer_temperaturas[TAMANHO_GRAFICO];
 float buffer_umidade[TAMANHO_GRAFICO];
 float buffer_pressao[TAMANHO_GRAFICO];
 int indice_buffer = 0;
 int contador_buffer = 0;
-
-// Buffers para os gráficos web (histórico maior)
 float historico_temp_media[TAMANHO_HISTORICO_WEB];
 float historico_umidade[TAMANHO_HISTORICO_WEB];
 float historico_pressao[TAMANHO_HISTORICO_WEB];
@@ -417,11 +416,16 @@ void ler_e_exibir_dados(struct bmp280_calib_param *, float *, float *, float *, 
 void callback_botoes(uint, uint32_t);
 void callback_joystick(void);
 
-// Funções novas e modificadas
+// Funções de estado e alertas
 EstadoSistema obter_estado_sistema(void);
 void atualizar_leds_rgb(EstadoSistema estado);
 const char* estado_para_string_cor(EstadoSistema estado);
 const char* estado_para_string_animacao(EstadoSistema estado);
+
+// <-- NOVAS FUNÇÕES E PROTÓTIPOS PARA O BUZZER -->
+void configurar_buzzer(void);
+void atualizar_buzzer(EstadoSistema estado);
+void set_buzzer_freq(uint slice_num, float freq);
 
 
 /* ---------------- Funções de Servidor HTTP (sem alterações) ---- */
@@ -528,11 +532,6 @@ static void start_http_server(void) {
 
 /* ---------------- Funções de Lógica de Estado ----------------- */
 
-/**
- * @brief Determina o estado atual do sistema com base nas leituras dos sensores.
- * A prioridade é: Temperatura > Umidade > Pressão.
- * @return O estado atual do sistema (enum EstadoSistema).
- */
 EstadoSistema obter_estado_sistema(void) {
     float pressao_hpa = pressao / 100.0f;
     
@@ -548,13 +547,9 @@ EstadoSistema obter_estado_sistema(void) {
     if (pressao_hpa > pressao_limite_superior) return ESTADO_PRESS_ALTA;
     if (pressao_hpa < pressao_limite_inferior) return ESTADO_PRESS_BAIXA;
     
-    // Se nenhum limite foi ultrapassado
     return ESTADO_NORMAL;
 }
 
-/**
- * @brief Converte o enum EstadoSistema para uma string de cor para exibição.
- */
 const char* estado_para_string_cor(EstadoSistema estado) {
     switch (estado) {
         case ESTADO_NORMAL:       return "Verde";
@@ -568,12 +563,9 @@ const char* estado_para_string_cor(EstadoSistema estado) {
     }
 }
 
-/**
- * @brief Converte o enum EstadoSistema para uma string de animação para exibição.
- */
 const char* estado_para_string_animacao(EstadoSistema estado) {
     switch (estado) {
-        case ESTADO_NORMAL:       return "Icone OK (v)";
+        case ESTADO_NORMAL:       return "Quadrado";
         case ESTADO_TEMP_ALTA:    return "Icone Alerta (!)";
         case ESTADO_TEMP_BAIXA:   return "Animacao Chuva";
         case ESTADO_UMID_ALTA:    return "Animacao Chuva";
@@ -584,52 +576,148 @@ const char* estado_para_string_animacao(EstadoSistema estado) {
     }
 }
 
-/* ---------------- Função de Controle dos LEDs RGB -------------- */
-/**
- * @brief Atualiza o LED RGB com base no estado atual do sistema.
- * @param estado O estado atual do sistema.
- */
+/* ---------------- Funções de Controle de Alertas --------------- */
+
 void atualizar_leds_rgb(EstadoSistema estado) {
-    // Desliga todos os LEDs primeiro
     gpio_put(LED_VERDE_PIN, 0);
     gpio_put(LED_AZUL_PIN, 0);
     gpio_put(LED_VERMELHO_PIN, 0);
     
     switch (estado) {
         case ESTADO_NORMAL:
-            gpio_put(LED_VERDE_PIN, 1); // Verde
+            gpio_put(LED_VERDE_PIN, 1);
             break;
         case ESTADO_TEMP_ALTA:
-            gpio_put(LED_VERMELHO_PIN, 1); // Vermelho
+            gpio_put(LED_VERMELHO_PIN, 1);
             break;
         case ESTADO_TEMP_BAIXA:
-            gpio_put(LED_AZUL_PIN, 1); // Azul
+            gpio_put(LED_AZUL_PIN, 1);
             break;
         case ESTADO_UMID_ALTA:
-            gpio_put(LED_AZUL_PIN, 1);    // Roxo (Azul + Vermelho)
+            gpio_put(LED_AZUL_PIN, 1);
             gpio_put(LED_VERMELHO_PIN, 1);
             break;
         case ESTADO_UMID_BAIXA:
-            gpio_put(LED_VERDE_PIN, 1);   // Amarelo (Verde + Vermelho)
+            gpio_put(LED_VERDE_PIN, 1);
             gpio_put(LED_VERMELHO_PIN, 1);
             break;
         case ESTADO_PRESS_ALTA:
-            gpio_put(LED_VERDE_PIN, 1);   // Branco (Verde + Azul + Vermelho)
+            gpio_put(LED_VERDE_PIN, 1);
             gpio_put(LED_AZUL_PIN, 1);
             gpio_put(LED_VERMELHO_PIN, 1);
             break;
         case ESTADO_PRESS_BAIXA:
-            // Para pressão baixa, o LED RGB fica desligado, e a matriz fica cinza.
             break;
     }
 }
+
+/**
+ * @brief Define a frequência do PWM para o buzzer.
+ * @param slice_num O slice do PWM a ser usado.
+ * @param freq A frequência desejada em Hz.
+ */
+void set_buzzer_freq(uint slice_num, float freq) {
+    uint32_t clock = 125000000;
+    // Cast freq to uint32_t for the modulo operation to avoid compiler error.
+    // This is safe because the frequencies used are whole numbers.
+    uint32_t f_int = (uint32_t)freq;
+    if (f_int == 0) return; // Avoid division by zero
+
+    uint32_t divider16 = clock / f_int / 4096 + (clock % (f_int * 4096) != 0);
+    if (divider16 / 16 == 0) divider16 = 16;
+
+    // Use the original float 'freq' for the floating point division to maintain precision
+    uint32_t wrap = (uint32_t)(clock * 16.0f / divider16 / freq) - 1;
+    
+    pwm_set_clkdiv_int_frac(slice_num, divider16 / 16, divider16 & 0xF);
+    pwm_set_wrap(slice_num, wrap);
+    // Define o duty cycle para 50% para um som mais audível
+    pwm_set_chan_level(slice_num, pwm_gpio_to_channel(BUZZER_PIN), wrap / 2);
+}
+
+/**
+ * @brief Controla o buzzer com base no estado do sistema, de forma não-bloqueante.
+ * @param estado O estado atual do sistema.
+ */
+void atualizar_buzzer(EstadoSistema estado) {
+    static EstadoSistema estado_anterior_buzzer = ESTADO_NORMAL;
+    static uint64_t proximo_evento_ms = 0;
+    static int passo_sequencia = 0;
+    uint slice_num = pwm_gpio_to_slice_num(BUZZER_PIN);
+
+    // Se o estado mudou, reinicia a sequência de som.
+    if (estado != estado_anterior_buzzer) {
+        passo_sequencia = 0;
+        proximo_evento_ms = 0;
+        pwm_set_enabled(slice_num, false);
+        estado_anterior_buzzer = estado;
+    }
+
+    // Se estiver no estado normal, garante que o buzzer esteja desligado e retorna.
+    if (estado == ESTADO_NORMAL) {
+        pwm_set_enabled(slice_num, false);
+        return;
+    }
+
+    uint64_t agora_ms = to_ms_since_boot(get_absolute_time());
+    if (agora_ms < proximo_evento_ms) {
+        return; // Aguarda o tempo para o próximo passo da sequência.
+    }
+
+    bool acima_limite = (estado == ESTADO_TEMP_ALTA || estado == ESTADO_UMID_ALTA || estado == ESTADO_PRESS_ALTA);
+
+    if (acima_limite) { // Beeps agudos (bip-bip-bip...)
+        switch(passo_sequencia) {
+            case 0: // bip 1 ON
+                set_buzzer_freq(slice_num, 2500); // Tom agudo
+                pwm_set_enabled(slice_num, true);
+                proximo_evento_ms = agora_ms + 100;
+                break;
+            case 1: // bip 1 OFF
+                pwm_set_enabled(slice_num, false);
+                proximo_evento_ms = agora_ms + 100;
+                break;
+            case 2: // bip 2 ON
+                pwm_set_enabled(slice_num, true);
+                proximo_evento_ms = agora_ms + 100;
+                break;
+            case 3: // bip 2 OFF
+                pwm_set_enabled(slice_num, false);
+                proximo_evento_ms = agora_ms + 100;
+                break;
+            case 4: // bip 3 ON
+                pwm_set_enabled(slice_num, true);
+                proximo_evento_ms = agora_ms + 100;
+                break;
+            case 5: // bip 3 OFF + Pausa longa
+                pwm_set_enabled(slice_num, false);
+                proximo_evento_ms = agora_ms + 1500;
+                break;
+        }
+        passo_sequencia = (passo_sequencia + 1) % 6; // Cicla de 0 a 5
+    } else { // Tom grave (biiiiip... biiiiip...)
+        switch(passo_sequencia) {
+            case 0: // biiiiip ON
+                set_buzzer_freq(slice_num, 500); // Tom grave
+                pwm_set_enabled(slice_num, true);
+                proximo_evento_ms = agora_ms + 400; // Duração do bip
+                break;
+            case 1: // biiiiip OFF + Pausa
+                pwm_set_enabled(slice_num, false);
+                proximo_evento_ms = agora_ms + 1000; // Intervalo entre bips
+                break;
+        }
+        passo_sequencia = (passo_sequencia + 1) % 2; // Cicla de 0 a 1
+    }
+}
+
 
 /* ================================================================ */
 /* -------------------------- FUNÇÃO MAIN ------------------------- */
 /* ================================================================ */
 int main() {
     stdio_init_all();
-    inicializar_matriz_led(); // <-- INICIALIZA A MATRIZ DE LED
+    inicializar_matriz_led();
     sleep_ms(2000);
 
     ssd1306_t tela;
@@ -640,6 +728,7 @@ int main() {
     configurar_botoes();
     configurar_joystick();
     configurar_leds_rgb();
+    configurar_buzzer(); // <-- CHAMA A CONFIGURAÇÃO DO BUZZER
     configurar_wifi(&tela);
 
     while (true) {
@@ -647,12 +736,10 @@ int main() {
             cyw43_arch_poll();
         }
 
-        // Bloco de leitura e atualização de estado (a cada 2 segundos)
         if (time_us_64() >= proxima_leitura) {
             ler_e_exibir_dados(&parametros_bmp, &temperatura_aht, &temperatura_bmp, &temperatura_media, &umidade, &pressao);
             proxima_leitura = time_us_64() + INTERVALO_LEITURA_MS * 1000;
             
-            // Atualiza buffers de gráficos
             buffer_temperaturas[indice_buffer] = temperatura_media;
             buffer_umidade[indice_buffer] = umidade;
             buffer_pressao[indice_buffer] = pressao / 100.0f;
@@ -665,20 +752,17 @@ int main() {
             indice_historico = (indice_historico + 1) % TAMANHO_HISTORICO_WEB;
             if (contador_historico < TAMANHO_HISTORICO_WEB) contador_historico++;
             
-            // --- NOVA LÓGICA DE ATUALIZAÇÃO ---
-            estado_global = obter_estado_sistema(); // Determina o estado atual
-            atualizar_leds_rgb(estado_global);      // Atualiza o LED RGB simples
+            estado_global = obter_estado_sistema();
+            atualizar_leds_rgb(estado_global);
             
-            // Sinaliza para a tela OLED ser atualizada, se necessário
             if (tela_atual == TELA_VALORES || tela_atual == TELA_GRAFICO || tela_atual == TELA_UMIDADE || tela_atual == TELA_PRESSAO || tela_atual == TELA_LED_STATUS)
                 atualizar_tela_flag = true;
         }
 
-        // --- ATUALIZAÇÃO CONTÍNUA DA MATRIZ ---
-        // Chamado em cada iteração do loop para permitir animações fluidas
+        // --- ATUALIZAÇÕES CONTÍNUAS ---
         atualizar_matriz_pelo_estado(estado_global);
+        atualizar_buzzer(estado_global); // <-- ATUALIZA O BUZZER A CADA LOOP
 
-        // Atualiza a tela OLED se a flag estiver ativa
         if (atualizar_tela_flag) {
             atualizar_tela(&tela, temperatura_aht, temperatura_bmp, temperatura_media, umidade, pressao);
             atualizar_tela_flag = false;
@@ -690,7 +774,7 @@ int main() {
     return 0;
 }
 
-/* ---------------- Inicialização (sem alterações) --------------- */
+/* ---------------- Inicialização -------------------------------- */
 void configurar_perifericos(ssd1306_t *tela, struct bmp280_calib_param *parametros) {
     i2c_init(I2C_SENSORES_PORT, 100 * 1000);
     gpio_set_function(I2C_SENSORES_SDA_PIN, GPIO_FUNC_I2C);
@@ -738,6 +822,15 @@ void configurar_leds_rgb(void) {
     gpio_init(LED_VERMELHO_PIN);
     gpio_set_dir(LED_VERMELHO_PIN, GPIO_OUT);
     gpio_put(LED_VERMELHO_PIN, 0);
+}
+
+void configurar_buzzer(void) {
+    // Configura o pino do buzzer para a função PWM
+    gpio_set_function(BUZZER_PIN, GPIO_FUNC_PWM);
+    // Encontra o slice do PWM correspondente ao pino
+    uint slice_num = pwm_gpio_to_slice_num(BUZZER_PIN);
+    // Garante que o PWM comece desligado
+    pwm_set_enabled(slice_num, false);
 }
 
 void configurar_wifi(ssd1306_t *tela) {
@@ -866,75 +959,51 @@ void mostrar_tela_conexao(ssd1306_t *tela) {
     snprintf(buffer, sizeof(buffer), "WiFi: %s", wifi_conectado ? "OK" : "ERRO");
     ssd1306_draw_string(tela, buffer, 0, 22, false);
 
-    // Status da Temperatura
     const char *status_temp;
-    if (temperatura_media < temperatura_limite_inferior) {
-        status_temp = "Abaixo";
-    } else if (temperatura_media > temperatura_limite_superior) {
-        status_temp = "Acima";
-    } else {
-        status_temp = "Normal";
-    }
+    if (temperatura_media < temperatura_limite_inferior) status_temp = "Abaixo";
+    else if (temperatura_media > temperatura_limite_superior) status_temp = "Acima";
+    else status_temp = "Normal";
     snprintf(buffer, sizeof(buffer), "Est.Temp: %s", status_temp);
     ssd1306_draw_string(tela, buffer, 0, 32, false);
 
-    // Status da Umidade
     const char *status_umid;
-    if (umidade < umidade_limite_inferior) {
-        status_umid = "Abaixo";
-    } else if (umidade > umidade_limite_superior) {
-        status_umid = "Acima";
-    } else {
-        status_umid = "Normal";
-    }
+    if (umidade < umidade_limite_inferior) status_umid = "Abaixo";
+    else if (umidade > umidade_limite_superior) status_umid = "Acima";
+    else status_umid = "Normal";
     snprintf(buffer, sizeof(buffer), "Est.Umid: %s", status_umid);
     ssd1306_draw_string(tela, buffer, 0, 42, false);
 
-    // Status da Pressão
     const char *status_press;
     float pressao_hpa = pressao / 100.0f;
-    if (pressao_hpa < pressao_limite_inferior) {
-        status_press = "Abaixo";
-    } else if (pressao_hpa > pressao_limite_superior) {
-        status_press = "Acima";
-    } else {
-        status_press = "Normal";
-    }
+    if (pressao_hpa < pressao_limite_inferior) status_press = "Abaixo";
+    else if (pressao_hpa > pressao_limite_superior) status_press = "Acima";
+    else status_press = "Normal";
     snprintf(buffer, sizeof(buffer), "Est.Press: %s", status_press);
     ssd1306_draw_string(tela, buffer, 0, 52, false);
 
     ssd1306_send_data(tela);
 }
 
-/**
- * @brief (REVERTIDA) Mostra o status do LED RGB na tela OLED.
- */
 void mostrar_tela_led_status(ssd1306_t *tela) {
     ssd1306_fill(tela, 0);
     
-    // Título centralizado
     const char *titulo = "Status LED RGB";
     ssd1306_draw_string(tela, titulo, (TELA_LARGURA - strlen(titulo) * 8) / 2, 0, false);
     
-    // Linha separadora
     ssd1306_hline(tela, 0, TELA_LARGURA, 12, true);
     
-    // Busca o estado atual e converte para a string da cor do LED
     const char *cor_atual = estado_para_string_cor(estado_global);
     
     char buffer[32];
     snprintf(buffer, sizeof(buffer), "Cor Atual:");
     ssd1306_draw_string(tela, buffer, 10, 25, false);
     
-    // Destaca a cor atual, centralizando-a
-    // Trata o caso especial da pressão baixa, onde o LED RGB fica desligado.
     const char* cor_display = cor_atual;
     if (estado_global == ESTADO_PRESS_BAIXA) {
         cor_display = "Desligado";
     }
     ssd1306_draw_string(tela, cor_display, (TELA_LARGURA - strlen(cor_display) * 8) / 2, 40, false);
     
-    // Informação adicional
     const char *info = "Baseado nos sensores";
     ssd1306_draw_string(tela, info, (TELA_LARGURA - strlen(info) * 6) / 2, 55, true);
     
