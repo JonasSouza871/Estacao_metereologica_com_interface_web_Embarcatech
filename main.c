@@ -17,35 +17,35 @@
 #include "font.h"
 
 /* ---- Configurações de Hardware -------------------------------- */
-#define I2C_SENSORES_PORT       i2c0
-#define I2C_SENSORES_SDA_PIN    0
-#define I2C_SENSORES_SCL_PIN    1
-#define I2C_TELA_PORT           i2c1
-#define I2C_TELA_SDA_PIN        14
-#define I2C_TELA_SCL_PIN        15
-#define TELA_ENDERECO           0x3C
-#define TELA_LARGURA            128
-#define TELA_ALTURA             64
-#define BOTAO_A_PIN             5
-#define BOTAO_B_PIN             6
-#define JOYSTICK_PIN            26
+#define I2C_SENSORES_PORT i2c0
+#define I2C_SENSORES_SDA_PIN 0
+#define I2C_SENSORES_SCL_PIN 1
+#define I2C_TELA_PORT i2c1
+#define I2C_TELA_SDA_PIN 14
+#define I2C_TELA_SCL_PIN 15
+#define TELA_ENDERECO 0x3C
+#define TELA_LARGURA 128
+#define TELA_ALTURA 64
+#define BOTAO_A_PIN 5
+#define BOTAO_B_PIN 6
+#define JOYSTICK_PIN 26
 
 /* ---- Configurações de Wi-Fi ----------------------------------- */
 #define WIFI_SSID "Jonas Souza"
 #define WIFI_PASS "12345678"
 
 /* ---- Configurações de Estado e Tempo -------------------------- */
-#define TELA_ABERTURA           0
-#define TELA_VALORES            1
-#define TELA_CONEXAO            2
-#define TELA_GRAFICO            3
-#define TELA_UMIDADE            4
-#define TELA_PRESSAO            5
-#define NUM_TELAS               6
-#define DEBOUNCE_MS             250
-#define INTERVALO_LEITURA_MS    2000
-#define TAMANHO_GRAFICO         30
-#define TAMANHO_HISTORICO_WEB   100
+#define TELA_ABERTURA 0
+#define TELA_VALORES 1
+#define TELA_CONEXAO 2
+#define TELA_GRAFICO 3
+#define TELA_UMIDADE 4
+#define TELA_PRESSAO 5
+#define NUM_TELAS 6
+#define DEBOUNCE_MS 250
+#define INTERVALO_LEITURA_MS 2000
+#define TAMANHO_GRAFICO 30
+#define TAMANHO_HISTORICO_WEB 100
 
 /* ---- Configurações de Limites --------------------------------- */
 float temperatura_limite_inferior = 20.0f;
@@ -59,31 +59,27 @@ float pressao_limite_superior = 1030.0f;
 bool wifi_conectado = false;
 char ip_endereco[24] = "Desconectado";
 
-/* ---- Variáveis Globais ---------------------------------------- */
 volatile uint8_t tela_atual = TELA_ABERTURA;
-volatile bool    atualizar_tela_flag = true;
-volatile float   fator_zoom = 1.0f;
-volatile float   fator_zoom_umidade = 1.0f;
-volatile float   fator_zoom_pressao = 1.0f;
-
-static uint64_t  ultimo_zoom_ms = 0;
-const  uint32_t  ZOOM_DEBOUNCE_MS = 120;
+volatile bool atualizar_tela_flag = true;
+volatile float fator_zoom = 1.0f;
+volatile float fator_zoom_umidade = 1.0f;
+volatile float fator_zoom_pressao = 1.0f;
+static uint64_t ultimo_zoom_ms = 0;
+const uint32_t ZOOM_DEBOUNCE_MS = 120;
 
 // Buffers para os gráficos do display
 float buffer_temperaturas[TAMANHO_GRAFICO];
 float buffer_umidade[TAMANHO_GRAFICO];
 float buffer_pressao[TAMANHO_GRAFICO];
-int   indice_buffer = 0;
-int   contador_buffer = 0;
+int indice_buffer = 0;
+int contador_buffer = 0;
 
 // Buffers para os gráficos web (histórico maior)
 float historico_temp_media[TAMANHO_HISTORICO_WEB];
-float historico_temp_aht[TAMANHO_HISTORICO_WEB];
-float historico_temp_bmp[TAMANHO_HISTORICO_WEB];
 float historico_umidade[TAMANHO_HISTORICO_WEB];
 float historico_pressao[TAMANHO_HISTORICO_WEB];
-int   indice_historico = 0;
-int   contador_historico = 0;
+int indice_historico = 0;
+int contador_historico = 0;
 
 // Variáveis para leituras dos sensores
 float temperatura_aht = 0, temperatura_bmp = 0, temperatura_media = 0;
@@ -91,7 +87,7 @@ float umidade = 0, pressao = 0;
 
 /* ---- Estrutura HTTP ------------------------------------------- */
 struct http_state {
-    char response[16384];  // Aumentado para suportar mais dados
+    char response[12288];
     size_t len;
     size_t sent;
 };
@@ -112,7 +108,7 @@ const char HTML_BODY[] =
     ".limits-container { margin: 20px 0; }"
     ".limits-section { margin: 15px 0; padding: 15px; background: #f8f9fa; border-radius: 8px; }"
     ".limits-title { font-weight: bold; margin-bottom: 10px; color: #2c3e50; }"
-    ".limits-row { display: flex; justify-content: space-between; align-items: center; margin: 8px 0; }"
+    ".limits-row { display: flex; justify-content: space-between; align-items: center; margin: 8px 0; flex-wrap: wrap; gap: 10px; }"
     ".limits-inputs { display: flex; gap: 10px; align-items: center; }"
     "input { padding: 8px; border: 1px solid #ddd; border-radius: 4px; width: 80px; }"
     "button { background: #2ecc71; color: white; border: none; padding: 8px 15px; border-radius: 4px; cursor: pointer; }"
@@ -124,187 +120,185 @@ const char HTML_BODY[] =
     ".chart-card { background: #f8f9fa; padding: 20px; border-radius: 8px; border: 1px solid #ddd; }"
     ".chart-title { font-weight: bold; margin-bottom: 15px; color: #2c3e50; text-align: center; }"
     "canvas { max-width: 100%; height: 300px !important; }"
+    ".system-status { margin: 30px 0; padding: 20px; background: #f8f9fa; border-radius: 8px; border: 1px solid #ddd; }"
+    ".system-status h3 { color: #2c3e50; margin-top: 0; }"
+    ".status-list { display: flex; flex-direction: column; gap: 10px; margin: 20px 0; }"
+    ".status-item { padding: 10px; border-radius: 5px; text-align: left; }"
+    ".status-item.baixo { background: #cce7ff; color: #004085; }"
+    ".status-item.normal { background: #d4edda; color: #155724; }"
+    ".status-item.alto { background: #f8d7da; color: #721c24; }"
+    ".status-label { font-size: 16px; font-weight: bold; }"
+    ".status-value { font-size: 16px; }"
     "</style>"
     "<script>"
     "let charts = {};"
     "let chartData = {"
-    "  tempMedia: [], tempAht: [], tempBmp: [], umidade: [], pressao: [],"
-    "  labels: []"
+    "tempMedia: [], umidade: [], pressao: [],"
+    "labels: []"
     "};"
-    
     "function atualizarLimites() {"
-    "  const tempMin = document.getElementById('temp_min').value;"
-    "  const tempMax = document.getElementById('temp_max').value;"
-    "  const umidMin = document.getElementById('umid_min').value;"
-    "  const umidMax = document.getElementById('umid_max').value;"
-    "  const pressMin = document.getElementById('press_min').value;"
-    "  const pressMax = document.getElementById('press_max').value;"
-    "  fetch('/set_limits?temp_min=' + tempMin + '&temp_max=' + tempMax + '&umid_min=' + umidMin + '&umid_max=' + umidMax + '&press_min=' + pressMin + '&press_max=' + pressMax)"
-    "    .then(response => response.text())"
-    "    .then(data => console.log(data));"
+    "const tempMin = document.getElementById('temp_min').value;"
+    "const tempMax = document.getElementById('temp_max').value;"
+    "const umidMin = document.getElementById('umid_min').value;"
+    "const umidMax = document.getElementById('umid_max').value;"
+    "const pressMin = document.getElementById('press_min').value;"
+    "const pressMax = document.getElementById('press_max').value;"
+    "fetch('/set_limits?temp_min=' + tempMin + '&temp_max=' + tempMax + '&umid_min=' + umidMin + '&umid_max=' + umidMax + '&press_min=' + pressMin + '&press_max=' + pressMax)"
+    ".then(response => response.text())"
+    ".then(data => console.log(data));"
     "}"
-    
+    "function atualizarStatusSistema(data) {"
+    "const tempStatus = document.getElementById('temp_status');"
+    "const tempValue = tempStatus.querySelector('.status-value');"
+    "if (data.temp_media < data.temp_min) {"
+    "tempStatus.className = 'status-item baixo';"
+    "tempValue.textContent = 'Baixa';"
+    "} else if (data.temp_media > data.temp_max) {"
+    "tempStatus.className = 'status-item alto';"
+    "tempValue.textContent = 'Alta';"
+    "} else {"
+    "tempStatus.className = 'status-item normal';"
+    "tempValue.textContent = 'Normal';"
+    "}"
+    "const umidStatus = document.getElementById('umid_status');"
+    "const umidValue = umidStatus.querySelector('.status-value');"
+    "if (data.umidade < data.umid_min) {"
+    "umidStatus.className = 'status-item baixo';"
+    "umidValue.textContent = 'Baixa';"
+    "} else if (data.umidade > data.umid_max) {"
+    "umidStatus.className = 'status-item alto';"
+    "umidValue.textContent = 'Alta';"
+    "} else {"
+    "umidStatus.className = 'status-item normal';"
+    "umidValue.textContent = 'Normal';"
+    "}"
+    "const pressStatus = document.getElementById('press_status');"
+    "const pressValue = pressStatus.querySelector('.status-value');"
+    "if (data.pressao < data.press_min) {"
+    "pressStatus.className = 'status-item baixo';"
+    "pressValue.textContent = 'Baixa';"
+    "} else if (data.pressao > data.press_max) {"
+    "pressStatus.className = 'status-item alto';"
+    "pressValue.textContent = 'Alta';"
+    "} else {"
+    "pressStatus.className = 'status-item normal';"
+    "pressValue.textContent = 'Normal';"
+    "}"
+    "}"
     "function criarGraficos() {"
-    "  const ctx1 = document.getElementById('chartTempMedia').getContext('2d');"
-    "  const ctx2 = document.getElementById('chartTempAht').getContext('2d');"
-    "  const ctx3 = document.getElementById('chartTempBmp').getContext('2d');"
-    "  const ctx4 = document.getElementById('chartUmidade').getContext('2d');"
-    "  const ctx5 = document.getElementById('chartPressao').getContext('2d');"
-    
-    "  charts.tempMedia = new Chart(ctx1, {"
-    "    type: 'line',"
-    "    data: {"
-    "      labels: chartData.labels,"
-    "      datasets: [{"
-    "        label: 'Temperatura Média (°C)',"
-    "        data: chartData.tempMedia,"
-    "        borderColor: '#e74c3c',"
-    "        backgroundColor: 'rgba(231, 76, 60, 0.1)',"
-    "        tension: 0.4"
-    "      }]"
-    "    },"
-    "    options: {"
-    "      responsive: true,"
-    "      maintainAspectRatio: false,"
-    "      scales: {"
-    "        y: { beginAtZero: false }"
-    "      }"
-    "    }"
-    "  });"
-    
-    "  charts.tempAht = new Chart(ctx2, {"
-    "    type: 'line',"
-    "    data: {"
-    "      labels: chartData.labels,"
-    "      datasets: [{"
-    "        label: 'Temperatura AHT20 (°C)',"
-    "        data: chartData.tempAht,"
-    "        borderColor: '#f39c12',"
-    "        backgroundColor: 'rgba(243, 156, 18, 0.1)',"
-    "        tension: 0.4"
-    "      }]"
-    "    },"
-    "    options: {"
-    "      responsive: true,"
-    "      maintainAspectRatio: false,"
-    "      scales: {"
-    "        y: { beginAtZero: false }"
-    "      }"
-    "    }"
-    "  });"
-    
-    "  charts.tempBmp = new Chart(ctx3, {"
-    "    type: 'line',"
-    "    data: {"
-    "      labels: chartData.labels,"
-    "      datasets: [{"
-    "        label: 'Temperatura BMP280 (°C)',"
-    "        data: chartData.tempBmp,"
-    "        borderColor: '#9b59b6',"
-    "        backgroundColor: 'rgba(155, 89, 182, 0.1)',"
-    "        tension: 0.4"
-    "      }]"
-    "    },"
-    "    options: {"
-    "      responsive: true,"
-    "      maintainAspectRatio: false,"
-    "      scales: {"
-    "        y: { beginAtZero: false }"
-    "      }"
-    "    }"
-    "  });"
-    
-    "  charts.umidade = new Chart(ctx4, {"
-    "    type: 'line',"
-    "    data: {"
-    "      labels: chartData.labels,"
-    "      datasets: [{"
-    "        label: 'Umidade (%)',"
-    "        data: chartData.umidade,"
-    "        borderColor: '#3498db',"
-    "        backgroundColor: 'rgba(52, 152, 219, 0.1)',"
-    "        tension: 0.4"
-    "      }]"
-    "    },"
-    "    options: {"
-    "      responsive: true,"
-    "      maintainAspectRatio: false,"
-    "      scales: {"
-    "        y: { beginAtZero: true, max: 100 }"
-    "      }"
-    "    }"
-    "  });"
-    
-    "  charts.pressao = new Chart(ctx5, {"
-    "    type: 'line',"
-    "    data: {"
-    "      labels: chartData.labels,"
-    "      datasets: [{"
-    "        label: 'Pressão (hPa)',"
-    "        data: chartData.pressao,"
-    "        borderColor: '#27ae60',"
-    "        backgroundColor: 'rgba(39, 174, 96, 0.1)',"
-    "        tension: 0.4"
-    "      }]"
-    "    },"
-    "    options: {"
-    "      responsive: true,"
-    "      maintainAspectRatio: false,"
-    "      scales: {"
-    "        y: { beginAtZero: false }"
-    "      }"
-    "    }"
-    "  });"
+    "const ctx1 = document.getElementById('chartTempMedia').getContext('2d');"
+    "const ctx2 = document.getElementById('chartUmidade').getContext('2d');"
+    "const ctx3 = document.getElementById('chartPressao').getContext('2d');"
+    "charts.tempMedia = new Chart(ctx1, {"
+    "type: 'line',"
+    "data: {"
+    "labels: chartData.labels,"
+    "datasets: [{"
+    "label: 'Temperatura Média (°C)',"
+    "data: chartData.tempMedia,"
+    "borderColor: '#e74c3c',"
+    "backgroundColor: 'rgba(231, 76, 60, 0.1)',"
+    "tension: 0.4"
+    "}]"
+    "},"
+    "options: {"
+    "responsive: true,"
+    "maintainAspectRatio: false,"
+    "scales: {"
+    "y: { beginAtZero: false }"
     "}"
-    
+    "}"
+    "});"
+    "charts.umidade = new Chart(ctx2, {"
+    "type: 'line',"
+    "data: {"
+    "labels: chartData.labels,"
+    "datasets: [{"
+    "label: 'Umidade (%)',"
+    "data: chartData.umidade,"
+    "borderColor: '#3498db',"
+    "backgroundColor: 'rgba(52, 152, 219, 0.1)',"
+    "tension: 0.4"
+    "}]"
+    "},"
+    "options: {"
+    "responsive: true,"
+    "maintainAspectRatio: false,"
+    "scales: {"
+    "y: { beginAtZero: true, max: 100 }"
+    "}"
+    "}"
+    "});"
+    "charts.pressao = new Chart(ctx3, {"
+    "type: 'line',"
+    "data: {"
+    "labels: chartData.labels,"
+    "datasets: [{"
+    "label: 'Pressão (hPa)',"
+    "data: chartData.pressao,"
+    "borderColor: '#27ae60',"
+    "backgroundColor: 'rgba(39, 174, 96, 0.1)',"
+    "tension: 0.4"
+    "}]"
+    "},"
+    "options: {"
+    "responsive: true,"
+    "maintainAspectRatio: false,"
+    "scales: {"
+    "y: { beginAtZero: false }"
+    "}"
+    "}"
+    "});"
+    "}"
     "function atualizarGraficos(data) {"
-    "  const agora = new Date();"
-    "  const tempo = agora.toLocaleTimeString();"
-    
-    "  chartData.tempMedia.push(data.temp_media);"
-    "  chartData.tempAht.push(data.temp_aht);"
-    "  chartData.tempBmp.push(data.temp_bmp);"
-    "  chartData.umidade.push(data.umidade);"
-    "  chartData.pressao.push(data.pressao);"
-    "  chartData.labels.push(tempo);"
-    
-    "  const maxPoints = 50;"
-    "  if (chartData.labels.length > maxPoints) {"
-    "    chartData.tempMedia.shift();"
-    "    chartData.tempAht.shift();"
-    "    chartData.tempBmp.shift();"
-    "    chartData.umidade.shift();"
-    "    chartData.pressao.shift();"
-    "    chartData.labels.shift();"
-    "  }"
-    
-    "  Object.values(charts).forEach(chart => chart.update('none'));"
+    "const agora = new Date();"
+    "const tempo = agora.toLocaleTimeString();"
+    "chartData.tempMedia.push(data.temp_media);"
+    "chartData.umidade.push(data.umidade);"
+    "chartData.pressao.push(data.pressao);"
+    "chartData.labels.push(tempo);"
+    "const maxPoints = 30;"
+    "if (chartData.labels.length > maxPoints) {"
+    "chartData.tempMedia.shift();"
+    "chartData.umidade.shift();"
+    "chartData.pressao.shift();"
+    "chartData.labels.shift();"
     "}"
-    
+    "Object.values(charts).forEach(chart => chart.update('none'));"
+    "}"
     "function atualizarDados() {"
-    "  fetch('/dados').then(res => res.json()).then(data => {"
-    "    document.getElementById('temp_atual').innerText = data.temp_media.toFixed(1);"
-    "    document.getElementById('umid_atual').innerText = data.umidade.toFixed(1);"
-    "    document.getElementById('press_atual').innerText = data.pressao.toFixed(1);"
-    "    document.getElementById('temp_range_display').innerText = data.temp_min.toFixed(1) + ' - ' + data.temp_max.toFixed(1);"
-    "    document.getElementById('umid_range_display').innerText = data.umid_min.toFixed(1) + ' - ' + data.umid_max.toFixed(1);"
-    "    document.getElementById('press_range_display').innerText = data.press_min.toFixed(1) + ' - ' + data.press_max.toFixed(1);"
-    "    atualizarGraficos(data);"
-    "  });"
+    "fetch('/dados').then(res => res.json()).then(data => {"
+    "document.getElementById('temp_aht').innerText = data.temp_aht.toFixed(1);"
+    "document.getElementById('temp_bmp').innerText = data.temp_bmp.toFixed(1);"
+    "document.getElementById('temp_atual').innerText = data.temp_media.toFixed(1);"
+    "document.getElementById('umid_atual').innerText = data.umidade.toFixed(1);"
+    "document.getElementById('press_atual').innerText = data.pressao.toFixed(1);"
+    "document.getElementById('temp_range_display').innerText = data.temp_min.toFixed(1) + ' - ' + data.temp_max.toFixed(1);"
+    "document.getElementById('umid_range_display').innerText = data.umid_min.toFixed(1) + ' - ' + data.umid_max.toFixed(1);"
+    "document.getElementById('press_range_display').innerText = data.press_min.toFixed(1) + ' - ' + data.press_max.toFixed(1);"
+    "atualizarGraficos(data);"
+    "atualizarStatusSistema(data);"
+    "});"
     "}"
-    
     "window.onload = function() {"
-    "  criarGraficos();"
-    "  atualizarDados();"
-    "  setInterval(atualizarDados, 2000);"
+    "criarGraficos();"
+    "atualizarDados();"
+    "setInterval(atualizarDados, 2000);"
     "};"
     "</script></head><body>"
     "<div class='container'>"
     "<h1>🌡️ PicoAtmos - Monitor Atmosférico</h1>"
-    
     "<div class='sensor-grid'>"
     "<div class='sensor-card'>"
-    "<div>Temperatura</div>"
+    "<div>Temperatura AHT</div>"
+    "<div class='sensor-value'><span id='temp_aht'>--</span><span class='sensor-unit'>°C</span></div>"
+    "</div>"
+    "<div class='sensor-card'>"
+    "<div>Temperatura BMP</div>"
+    "<div class='sensor-value'><span id='temp_bmp'>--</span><span class='sensor-unit'>°C</span></div>"
+    "</div>"
+    "<div class='sensor-card'>"
+    "<div>Temperatura Média</div>"
     "<div class='sensor-value'><span id='temp_atual'>--</span><span class='sensor-unit'>°C</span></div>"
     "</div>"
     "<div class='sensor-card'>"
@@ -316,10 +310,8 @@ const char HTML_BODY[] =
     "<div class='sensor-value'><span id='press_atual'>--</span><span class='sensor-unit'>hPa</span></div>"
     "</div>"
     "</div>"
-    
     "<div class='limits-container'>"
     "<h3>Configurações de Limites</h3>"
-    
     "<div class='limits-section'>"
     "<div class='limits-title'>Temperatura</div>"
     "<div class='limits-row'>"
@@ -331,7 +323,6 @@ const char HTML_BODY[] =
     "</div>"
     "</div>"
     "</div>"
-    
     "<div class='limits-section'>"
     "<div class='limits-title'>Umidade</div>"
     "<div class='limits-row'>"
@@ -343,7 +334,6 @@ const char HTML_BODY[] =
     "</div>"
     "</div>"
     "</div>"
-    
     "<div class='limits-section'>"
     "<div class='limits-title'>Pressão</div>"
     "<div class='limits-row'>"
@@ -355,24 +345,14 @@ const char HTML_BODY[] =
     "</div>"
     "</div>"
     "</div>"
-    
     "<button onclick='atualizarLimites()'>Salvar Limites</button>"
     "</div>"
-    
     "<div class='charts-container'>"
     "<h3>Gráficos em Tempo Real</h3>"
     "<div class='charts-grid'>"
     "<div class='chart-card'>"
     "<div class='chart-title'>Temperatura Média</div>"
     "<canvas id='chartTempMedia'></canvas>"
-    "</div>"
-    "<div class='chart-card'>"
-    "<div class='chart-title'>Temperatura AHT20</div>"
-    "<canvas id='chartTempAht'></canvas>"
-    "</div>"
-    "<div class='chart-card'>"
-    "<div class='chart-title'>Temperatura BMP280</div>"
-    "<canvas id='chartTempBmp'></canvas>"
     "</div>"
     "<div class='chart-card'>"
     "<div class='chart-title'>Umidade</div>"
@@ -384,7 +364,20 @@ const char HTML_BODY[] =
     "</div>"
     "</div>"
     "</div>"
-    
+    "<div class='system-status'>"
+    "<h3>📊 Estado do Sistema</h3>"
+    "<div class='status-list'>"
+    "<div id='temp_status' class='status-item'>"
+    "<span class='status-label'>Temperatura: </span><span class='status-value'>--</span>"
+    "</div>"
+    "<div id='umid_status' class='status-item'>"
+    "<span class='status-label'>Umidade: </span><span class='status-value'>--</span>"
+    "</div>"
+    "<div id='press_status' class='status-item'>"
+    "<span class='status-label'>Pressão: </span><span class='status-value'>--</span>"
+    "</div>"
+    "</div>"
+    "</div>"
     "<div class='status-info'>"
     "<div>Sistema PicoAtmos ativo</div>"
     "<div>Atualizando a cada 2 segundos</div>"
@@ -405,7 +398,7 @@ void mostrar_tela_grafico(ssd1306_t *);
 void mostrar_tela_umidade(ssd1306_t *);
 void mostrar_tela_pressao(ssd1306_t *);
 void atualizar_tela(ssd1306_t *, float, float, float, float, float);
-void ler_e_exibir_dados(struct bmp280_calib_param *, float*, float*, float*, float*, float*);
+void ler_e_exibir_dados(struct bmp280_calib_param *, float *, float *, float *, float *, float *);
 void callback_botoes(uint, uint32_t);
 void callback_joystick(void);
 
@@ -425,7 +418,6 @@ static err_t http_recv(void *arg, struct tcp_pcb *tpcb, struct pbuf *p, err_t er
         tcp_close(tpcb);
         return ERR_OK;
     }
-
     char *req = (char *)p->payload;
     struct http_state *hs = malloc(sizeof(struct http_state));
     if (!hs) {
@@ -434,68 +426,60 @@ static err_t http_recv(void *arg, struct tcp_pcb *tpcb, struct pbuf *p, err_t er
         return ERR_MEM;
     }
     hs->sent = 0;
-
-    // Responde com dados dos sensores em JSON
     if (strstr(req, "GET /dados")) {
         char json_payload[512];
         int json_len = snprintf(json_payload, sizeof(json_payload),
-                                "{\"temp_media\":%.2f,\"temp_aht\":%.2f,\"temp_bmp\":%.2f,\"umidade\":%.2f,\"pressao\":%.2f,"
-                                "\"temp_min\":%.2f,\"temp_max\":%.2f,\"umid_min\":%.2f,\"umid_max\":%.2f,"
-                                "\"press_min\":%.2f,\"press_max\":%.2f}",
-                                temperatura_media, temperatura_aht, temperatura_bmp, umidade, pressao/100.0f,
-                                temperatura_limite_inferior, temperatura_limite_superior,
-                                umidade_limite_inferior, umidade_limite_superior,
-                                pressao_limite_inferior, pressao_limite_superior);
-
+            "{\"temp_aht\":%.2f,\"temp_bmp\":%.2f,\"temp_media\":%.2f,\"umidade\":%.2f,\"pressao\":%.2f,"
+            "\"temp_min\":%.2f,\"temp_max\":%.2f,\"umid_min\":%.2f,\"umid_max\":%.2f,"
+            "\"press_min\":%.2f,\"press_max\":%.2f}",
+            temperatura_aht, temperatura_bmp, temperatura_media, umidade, pressao / 100.0f,
+            temperatura_limite_inferior, temperatura_limite_superior,
+            umidade_limite_inferior, umidade_limite_superior,
+            pressao_limite_inferior, pressao_limite_superior);
         hs->len = snprintf(hs->response, sizeof(hs->response),
-                           "HTTP/1.1 200 OK\r\n"
-                           "Content-Type: application/json\r\n"
-                           "Content-Length: %d\r\n"
-                           "Connection: close\r\n"
-                           "\r\n"
-                           "%s",
-                           json_len, json_payload);
+            "HTTP/1.1 200 OK\r\n"
+            "Content-Type: application/json\r\n"
+            "Content-Length: %d\r\n"
+            "Connection: close\r\n"
+            "\r\n"
+            "%s",
+            json_len, json_payload);
     }
-    // Atualiza limites via requisição HTTP
     else if (strstr(req, "GET /set_limits")) {
         float temp_min, temp_max, umid_min, umid_max, press_min, press_max;
-        sscanf(req, "GET /set_limits?temp_min=%f&temp_max=%f&umid_min=%f&umid_max=%f&press_min=%f&press_max=%f", 
-               &temp_min, &temp_max, &umid_min, &umid_max, &press_min, &press_max);
-        
+        sscanf(req, "GET /set_limits?temp_min=%f&temp_max=%f&umid_min=%f&umid_max=%f&press_min=%f&press_max=%f",
+            &temp_min, &temp_max, &umid_min, &umid_max, &press_min, &press_max);
+
         temperatura_limite_inferior = temp_min;
         temperatura_limite_superior = temp_max;
         umidade_limite_inferior = umid_min;
         umidade_limite_superior = umid_max;
         pressao_limite_inferior = press_min;
         pressao_limite_superior = press_max;
-
         const char *txt = "Limites atualizados";
         hs->len = snprintf(hs->response, sizeof(hs->response),
-                           "HTTP/1.1 200 OK\r\n"
-                           "Content-Type: text/plain\r\n"
-                           "Content-Length: %d\r\n"
-                           "Connection: close\r\n"
-                           "\r\n"
-                           "%s",
-                           (int)strlen(txt), txt);
+            "HTTP/1.1 200 OK\r\n"
+            "Content-Type: text/plain\r\n"
+            "Content-Length: %d\r\n"
+            "Connection: close\r\n"
+            "\r\n"
+            "%s",
+            (int)strlen(txt), txt);
     }
-    // Envia página HTML padrão
     else {
         hs->len = snprintf(hs->response, sizeof(hs->response),
-                           "HTTP/1.1 200 OK\r\n"
-                           "Content-Type: text/html\r\n"
-                           "Content-Length: %d\r\n"
-                           "Connection: close\r\n"
-                           "\r\n"
-                           "%s",
-                           (int)strlen(HTML_BODY), HTML_BODY);
+            "HTTP/1.1 200 OK\r\n"
+            "Content-Type: text/html\r\n"
+            "Content-Length: %d\r\n"
+            "Connection: close\r\n"
+            "\r\n"
+            "%s",
+            (int)strlen(HTML_BODY), HTML_BODY);
     }
-
     tcp_arg(tpcb, hs);
     tcp_sent(tpcb, http_sent);
     tcp_write(tpcb, hs->response, hs->len, TCP_WRITE_FLAG_COPY);
     tcp_output(tpcb);
-
     pbuf_free(p);
     return ERR_OK;
 }
@@ -524,56 +508,42 @@ static void start_http_server(void) {
 int main() {
     stdio_init_all();
     sleep_ms(2000);
-
     ssd1306_t tela;
     struct bmp280_calib_param parametros_bmp;
     uint64_t proxima_leitura = 0;
-
     configurar_perifericos(&tela, &parametros_bmp);
     configurar_botoes();
     configurar_joystick();
     configurar_wifi(&tela);
 
     while (true) {
-        // Atualiza estado da rede Wi-Fi
         if (wifi_conectado) {
             cyw43_arch_poll();
         }
-
         if (time_us_64() >= proxima_leitura) {
-            ler_e_exibir_dados(&parametros_bmp, &temperatura_aht, &temperatura_bmp,
-                               &temperatura_media, &umidade, &pressao);
+            ler_e_exibir_dados(&parametros_bmp, &temperatura_aht, &temperatura_bmp, &temperatura_media, &umidade, &pressao);
             proxima_leitura = time_us_64() + INTERVALO_LEITURA_MS * 1000;
-
-            // Armazena os dados nos buffers circulares do display
             buffer_temperaturas[indice_buffer] = temperatura_media;
             buffer_umidade[indice_buffer] = umidade;
             buffer_pressao[indice_buffer] = pressao / 100.0f;
-            
+
             indice_buffer = (indice_buffer + 1) % TAMANHO_GRAFICO;
             if (contador_buffer < TAMANHO_GRAFICO) contador_buffer++;
-
-            // Armazena os dados no histórico web
             historico_temp_media[indice_historico] = temperatura_media;
-            historico_temp_aht[indice_historico] = temperatura_aht;
-            historico_temp_bmp[indice_historico] = temperatura_bmp;
             historico_umidade[indice_historico] = umidade;
             historico_pressao[indice_historico] = pressao / 100.0f;
-            
+
             indice_historico = (indice_historico + 1) % TAMANHO_HISTORICO_WEB;
             if (contador_historico < TAMANHO_HISTORICO_WEB) contador_historico++;
-
-            // Atualiza a tela se estiver exibindo dados que mudam com o tempo
-            if (tela_atual == TELA_VALORES || tela_atual == TELA_GRAFICO || 
-                tela_atual == TELA_UMIDADE || tela_atual == TELA_PRESSAO)
+            if (tela_atual == TELA_VALORES || tela_atual == TELA_GRAFICO || tela_atual == TELA_UMIDADE || tela_atual == TELA_PRESSAO)
                 atualizar_tela_flag = true;
         }
-        
+
         if (atualizar_tela_flag) {
             atualizar_tela(&tela, temperatura_aht, temperatura_bmp, temperatura_media, umidade, pressao);
             atualizar_tela_flag = false;
         }
-        
+
         callback_joystick();
         sleep_ms(10);
     }
@@ -587,16 +557,13 @@ void configurar_perifericos(ssd1306_t *tela, struct bmp280_calib_param *parametr
     gpio_set_function(I2C_SENSORES_SCL_PIN, GPIO_FUNC_I2C);
     gpio_pull_up(I2C_SENSORES_SDA_PIN);
     gpio_pull_up(I2C_SENSORES_SCL_PIN);
-
     i2c_init(I2C_TELA_PORT, 400 * 1000);
     gpio_set_function(I2C_TELA_SDA_PIN, GPIO_FUNC_I2C);
     gpio_set_function(I2C_TELA_SCL_PIN, GPIO_FUNC_I2C);
     gpio_pull_up(I2C_TELA_SDA_PIN);
     gpio_pull_up(I2C_TELA_SCL_PIN);
-
     ssd1306_init(tela, TELA_LARGURA, TELA_ALTURA, false, TELA_ENDERECO, I2C_TELA_PORT);
     ssd1306_config(tela);
-
     aht20_init(I2C_SENSORES_PORT);
     bmp280_init(I2C_SENSORES_PORT);
     bmp280_get_calib_params(I2C_SENSORES_PORT, parametros);
@@ -624,7 +591,6 @@ void configurar_wifi(ssd1306_t *tela) {
     ssd1306_draw_string(tela, "Iniciando Wi-Fi", 0, 0, false);
     ssd1306_draw_string(tela, "Aguarde...", 0, 30, false);
     ssd1306_send_data(tela);
-
     if (cyw43_arch_init()) {
         ssd1306_fill(tela, 0);
         ssd1306_draw_string(tela, "WiFi => FALHA", 0, 0, false);
@@ -633,7 +599,6 @@ void configurar_wifi(ssd1306_t *tela) {
         strcpy(ip_endereco, "Erro Init");
         return;
     }
-
     cyw43_arch_enable_sta_mode();
     if (cyw43_arch_wifi_connect_timeout_ms(WIFI_SSID, WIFI_PASS, CYW43_AUTH_WPA2_AES_PSK, 10000)) {
         ssd1306_fill(tela, 0);
@@ -643,16 +608,14 @@ void configurar_wifi(ssd1306_t *tela) {
         strcpy(ip_endereco, "Erro Conexao");
         return;
     }
-
-    // Obtém o endereço IP
     uint8_t *ip = (uint8_t *)&(cyw43_state.netif[0].ip_addr.addr);
     snprintf(ip_endereco, sizeof(ip_endereco), "%d.%d.%d.%d", ip[0], ip[1], ip[2], ip[3]);
-    
+
     ssd1306_fill(tela, 0);
     ssd1306_draw_string(tela, "WiFi => OK", 0, 0, false);
     ssd1306_draw_string(tela, ip_endereco, 0, 10, false);
     ssd1306_send_data(tela);
-    
+
     wifi_conectado = true;
     start_http_server();
     sleep_ms(2000);
@@ -678,12 +641,10 @@ void callback_botoes(uint gpio, uint32_t eventos) {
 
 void callback_joystick(void) {
     if (tela_atual != TELA_GRAFICO && tela_atual != TELA_UMIDADE && tela_atual != TELA_PRESSAO) return;
-
     const uint16_t ZONA_MORTA_BAIXA = 1500, ZONA_MORTA_ALTA = 2500;
     uint16_t valor = adc_read();
     uint64_t agora = to_ms_since_boot(get_absolute_time());
     if (agora - ultimo_zoom_ms < ZOOM_DEBOUNCE_MS) return;
-
     bool mudou = false;
     if (tela_atual == TELA_GRAFICO) {
         if (valor > ZONA_MORTA_ALTA && fator_zoom < 4.0f) {
@@ -704,7 +665,6 @@ void callback_joystick(void) {
             fator_zoom_pressao -= 0.10f; mudou = true;
         }
     }
-
     if (mudou) {
         ultimo_zoom_ms = agora;
         atualizar_tela_flag = true;
@@ -744,12 +704,14 @@ void mostrar_tela_conexao(ssd1306_t *tela) {
     ssd1306_fill(tela, 0);
     const char *cabecalho = "Status da Rede";
     ssd1306_draw_string(tela, cabecalho, (TELA_LARGURA - strlen(cabecalho) * 8) / 2, 0, false);
-    
+
     char buffer[32];
     snprintf(buffer, sizeof(buffer), "IP: %s", ip_endereco);
     ssd1306_draw_string(tela, buffer, 0, 25, false);
+
     snprintf(buffer, sizeof(buffer), "WiFi: %s", wifi_conectado ? "CONECTADO" : "DESCONECTADO");
     ssd1306_draw_string(tela, buffer, 0, 40, false);
+
     ssd1306_send_data(tela);
 }
 
@@ -758,13 +720,11 @@ void mostrar_tela_grafico(ssd1306_t *tela) {
     const uint8_t gx = 20, gy = 52, H = 40, W = 105;
     const char *titulo = "Temp media";
     ssd1306_draw_string(tela, titulo, (TELA_LARGURA - strlen(titulo) * 8) / 2, 0, false);
-
     if (contador_buffer == 0) {
         ssd1306_draw_string(tela, "Aguardando dados...", 8, 30, false);
         ssd1306_send_data(tela);
         return;
     }
-
     float valor_min = buffer_temperaturas[0], valor_max = valor_min;
     for (int i = 0; i < contador_buffer; ++i) {
         int idx = (indice_buffer - contador_buffer + i + TAMANHO_GRAFICO) % TAMANHO_GRAFICO;
@@ -777,27 +737,22 @@ void mostrar_tela_grafico(ssd1306_t *tela) {
         valor_min = media - 1.0f;
         valor_max = media + 1.0f;
     }
-
     float faixa_visivel = (valor_max - valor_min) / fator_zoom;
     float centro = (valor_max + valor_min) * 0.5f;
     float ymin = centro - faixa_visivel * 0.5f;
     float ymax = centro + faixa_visivel * 0.5f;
-
     float passo_aproximado = faixa_visivel / 3.0f;
     float potencia = powf(10.0f, floorf(log10f(passo_aproximado)));
     float mantissa = passo_aproximado / potencia;
     float passo = (mantissa < 1.5f) ? 1.0f : (mantissa < 3.5f) ? 2.0f : (mantissa < 7.5f) ? 5.0f : 10.0f;
     passo *= potencia;
     if (passo < 0.1f) passo = 0.1f;
-
     float ymax_marcacao = ceilf(ymax / passo) * passo;
     float ymin_marcacao = floorf(ymin / passo) * passo;
     faixa_visivel = ymax_marcacao - ymin_marcacao;
     if (faixa_visivel < 0.1f) faixa_visivel = 0.1f;
-
     ssd1306_hline(tela, gx, gx + W, gy, true);
     ssd1306_vline(tela, gx, gy - H, gy, true);
-
     char buffer[8];
     int num_marcacoes = 0;
     for (float temp = ymax_marcacao; temp >= ymin_marcacao - (passo * 0.1f); temp -= passo) {
@@ -812,14 +767,12 @@ void mostrar_tela_grafico(ssd1306_t *tela) {
         }
         ssd1306_draw_string(tela, buffer, 0, y - 4, false);
     }
-
     ssd1306_vline(tela, gx, gy, gy + 2, true);
     ssd1306_vline(tela, gx + W / 2, gy, gy + 2, true);
     ssd1306_vline(tela, gx + W, gy, gy + 2, true);
     ssd1306_draw_string(tela, "0", gx - 3, gy + 5, false);
     ssd1306_draw_string(tela, "30s", gx + W / 2 - 10, gy + 5, false);
     ssd1306_draw_string(tela, "60s", gx + W - 18, gy + 5, false);
-
     if (contador_buffer > 1) {
         for (int i = 0; i < contador_buffer - 1; ++i) {
             int idx_atual = (indice_buffer - contador_buffer + i + TAMANHO_GRAFICO) % TAMANHO_GRAFICO;
@@ -838,17 +791,14 @@ void mostrar_tela_grafico(ssd1306_t *tela) {
 
 void mostrar_tela_umidade(ssd1306_t *tela) {
     ssd1306_fill(tela, 0);
-
     const uint8_t gx = 20, gy = 52, H = 40, W = 105;
     const char *titulo = "Umidade";
     ssd1306_draw_string(tela, titulo, (TELA_LARGURA - strlen(titulo) * 8) / 2, 0, false);
-
     if (contador_buffer == 0) {
         ssd1306_draw_string(tela, "Aguardando dados...", 8, 30, false);
         ssd1306_send_data(tela);
         return;
     }
-
     float valor_min = buffer_umidade[0], valor_max = valor_min;
     for (int i = 0; i < contador_buffer; ++i) {
         int idx = (indice_buffer - contador_buffer + i + TAMANHO_GRAFICO) % TAMANHO_GRAFICO;
@@ -863,48 +813,41 @@ void mostrar_tela_umidade(ssd1306_t *tela) {
     }
     if (valor_min < 0.0f) valor_min = 0.0f;
     if (valor_max > 100.0f) valor_max = 100.0f;
-
     float faixa_visivel = (valor_max - valor_min) / fator_zoom_umidade;
     float centro = (valor_max + valor_min) * 0.5f;
     float ymin = centro - faixa_visivel * 0.5f;
     float ymax = centro + faixa_visivel * 0.5f;
-
     float passo_aproximado = faixa_visivel / 3.0f;
     float potencia = powf(10.0f, floorf(log10f(passo_aproximado)));
     float mantissa = passo_aproximado / potencia;
     float passo = (mantissa < 1.5f) ? 1.0f : (mantissa < 3.5f) ? 2.0f : (mantissa < 7.5f) ? 5.0f : 10.0f;
     passo *= potencia;
     if (passo < 1.0f) passo = 1.0f;
-
     float ymax_marcacao = ceilf(ymax / passo) * passo;
     float ymin_marcacao = floorf(ymin / passo) * passo;
     faixa_visivel = ymax_marcacao - ymin_marcacao;
     if (faixa_visivel < 1.0f) faixa_visivel = 1.0f;
-
     ssd1306_hline(tela, gx, gx + W, gy, true);
     ssd1306_vline(tela, gx, gy - H, gy, true);
-
     char buffer[8];
     int num_marcacoes = 0;
     for (float val = ymax_marcacao; val >= ymin_marcacao - (passo * 0.1f); val -= passo) {
         if (num_marcacoes++ >= 4) break;
         uint8_t y = gy - (uint8_t)(((val - ymin_marcacao) / faixa_visivel) * H);
         if (y > gy || y < (gy - H)) continue;
-        
+
         ssd1306_hline(tela, gx - 2, gx, y, true);
         snprintf(buffer, sizeof(buffer), "%.0f", val);
         ssd1306_draw_string(tela, buffer, 0, y - 4, false);
     }
-    
-    ssd1306_draw_string(tela, "%", 0, gy - H - 8, false);
 
+    ssd1306_draw_string(tela, "%", 0, gy - H - 8, false);
     ssd1306_vline(tela, gx, gy, gy + 2, true);
     ssd1306_vline(tela, gx + W / 2, gy, gy + 2, true);
     ssd1306_vline(tela, gx + W, gy, gy + 2, true);
     ssd1306_draw_string(tela, "0", gx - 3, gy + 5, false);
     ssd1306_draw_string(tela, "30s", gx + W / 2 - 10, gy + 5, false);
     ssd1306_draw_string(tela, "60s", gx + W - 18, gy + 5, false);
-
     if (contador_buffer > 1) {
         for (int i = 0; i < contador_buffer - 1; ++i) {
             int idx_atual = (indice_buffer - contador_buffer + i + TAMANHO_GRAFICO) % TAMANHO_GRAFICO;
@@ -925,17 +868,14 @@ void mostrar_tela_umidade(ssd1306_t *tela) {
 
 void mostrar_tela_pressao(ssd1306_t *tela) {
     ssd1306_fill(tela, 0);
-
     const uint8_t gx = 20, gy = 52, H = 40, W = 105;
     const char *titulo = "Pressao";
     ssd1306_draw_string(tela, titulo, (TELA_LARGURA - strlen(titulo) * 8) / 2, 0, false);
-
     if (contador_buffer == 0) {
         ssd1306_draw_string(tela, "Aguardando dados...", 8, 30, false);
         ssd1306_send_data(tela);
         return;
     }
-
     float valor_min = buffer_pressao[0], valor_max = valor_min;
     for (int i = 0; i < contador_buffer; ++i) {
         int idx = (indice_buffer - contador_buffer + i + TAMANHO_GRAFICO) % TAMANHO_GRAFICO;
@@ -948,67 +888,56 @@ void mostrar_tela_pressao(ssd1306_t *tela) {
         valor_min = media - 5.0f;
         valor_max = media + 5.0f;
     }
-
     float faixa_visivel = (valor_max - valor_min) / fator_zoom_pressao;
     float centro = (valor_max + valor_min) * 0.5f;
     float ymin = centro - faixa_visivel * 0.5f;
     float ymax = centro + faixa_visivel * 0.5f;
-
     float passo_aproximado = faixa_visivel / 3.0f;
     float potencia = powf(10.0f, floorf(log10f(passo_aproximado)));
     float mantissa = passo_aproximado / potencia;
     float passo = (mantissa < 1.5f) ? 1.0f : (mantissa < 3.5f) ? 2.0f : (mantissa < 7.5f) ? 5.0f : 10.0f;
     passo *= potencia;
     if (passo < 1.0f) passo = 1.0f;
-
     float ymax_marcacao = ceilf(ymax / passo) * passo;
     float ymin_marcacao = floorf(ymin / passo) * passo;
     faixa_visivel = ymax_marcacao - ymin_marcacao;
     if (faixa_visivel < 1.0f) faixa_visivel = 1.0f;
-
     ssd1306_hline(tela, gx, gx + W, gy, true);
     ssd1306_vline(tela, gx, gy - H, gy, true);
-
     char buffer[8];
     int num_marcacoes = 0;
     for (float val = ymax_marcacao; val >= ymin_marcacao - (passo * 0.1f); val -= passo) {
         if (num_marcacoes++ >= 4) break;
         uint8_t y = gy - (uint8_t)(((val - ymin_marcacao) / faixa_visivel) * H);
         if (y > gy || y < (gy - H)) continue;
-        
+
         ssd1306_hline(tela, gx - 2, gx, y, true);
         snprintf(buffer, sizeof(buffer), "%.0f", val);
         ssd1306_draw_string(tela, buffer, 0, y - 4, false);
     }
-    
-    ssd1306_draw_string(tela, "hPa", 0, gy - H - 8, false);
 
+    ssd1306_draw_string(tela, "hPa", 0, gy - H - 8, false);
     ssd1306_vline(tela, gx, gy, gy + 2, true);
     ssd1306_vline(tela, gx + W / 2, gy, gy + 2, true);
     ssd1306_vline(tela, gx + W, gy, gy + 2, true);
     ssd1306_draw_string(tela, "0", gx - 3, gy + 5, false);
     ssd1306_draw_string(tela, "30s", gx + W / 2 - 10, gy + 5, false);
     ssd1306_draw_string(tela, "60s", gx + W - 18, gy + 5, false);
-
     if (contador_buffer > 1) {
         for (int i = 0; i < contador_buffer - 1; ++i) {
             int idx_atual = (indice_buffer - contador_buffer + i + TAMANHO_GRAFICO) % TAMANHO_GRAFICO;
             int idx_proximo = (idx_atual + 1) % TAMANHO_GRAFICO;
-
             float valor1 = buffer_pressao[idx_atual];
             float valor2 = buffer_pressao[idx_proximo];
-
             uint8_t x1 = gx + (i * W) / (TAMANHO_GRAFICO - 1);
             uint8_t y1 = gy - (uint8_t)(((valor1 - ymin_marcacao) / faixa_visivel) * H);
             uint8_t x2 = gx + ((i + 1) * W) / (TAMANHO_GRAFICO - 1);
             uint8_t y2 = gy - (uint8_t)(((valor2 - ymin_marcacao) / faixa_visivel) * H);
-
             if (y1 >= (gy - H) && y1 <= gy && y2 >= (gy - H) && y2 <= gy) {
                  ssd1306_line(tela, x1, y1, x2, y2, true);
             }
         }
     }
-
     ssd1306_send_data(tela);
 }
 
@@ -1016,20 +945,19 @@ void mostrar_tela_pressao(ssd1306_t *tela) {
 void atualizar_tela(ssd1306_t *tela, float temp_aht, float temp_bmp, float temp_media, float umid, float press) {
     switch (tela_atual) {
         case TELA_ABERTURA: mostrar_tela_abertura(tela); break;
-        case TELA_VALORES:  mostrar_tela_valores(tela, temp_aht, temp_bmp, temp_media, umid, press); break;
-        case TELA_CONEXAO:  mostrar_tela_conexao(tela); break;
-        case TELA_GRAFICO:  mostrar_tela_grafico(tela); break;
-        case TELA_UMIDADE:  mostrar_tela_umidade(tela); break;
-        case TELA_PRESSAO:  mostrar_tela_pressao(tela); break;
+        case TELA_VALORES: mostrar_tela_valores(tela, temp_aht, temp_bmp, temp_media, umid, press); break;
+        case TELA_CONEXAO: mostrar_tela_conexao(tela); break;
+        case TELA_GRAFICO: mostrar_tela_grafico(tela); break;
+        case TELA_UMIDADE: mostrar_tela_umidade(tela); break;
+        case TELA_PRESSAO: mostrar_tela_pressao(tela); break;
     }
 }
 
-void ler_e_exibir_dados(struct bmp280_calib_param *parametros, float *temp_aht, float *temp_bmp,
-                        float *temp_media, float *umid, float *press) {
-    AHT20_Data dados;
-    aht20_read(I2C_SENSORES_PORT, &dados);
-    *temp_aht = dados.temperature;
-    *umid = dados.humidity;
+void ler_e_exibir_dados(struct bmp280_calib_param *parametros, float *temp_aht, float *temp_bmp, float *temp_media, float *umid, float *press) {
+    AHT20_Data dados_aht;
+    aht20_read(I2C_SENSORES_PORT, &dados_aht);
+    *temp_aht = dados_aht.temperature;
+    *umid = dados_aht.humidity;
     int32_t temp_raw, press_raw;
     bmp280_read_raw(I2C_SENSORES_PORT, &temp_raw, &press_raw);
     int32_t temp_convertida = bmp280_convert_temp(temp_raw, parametros);
