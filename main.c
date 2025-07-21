@@ -10,7 +10,7 @@
 #include "hardware/gpio.h"
 #include "hardware/adc.h"
 #include "hardware/irq.h"
-#include "hardware/pwm.h" // <-- NOVA INCLUSÃO PARA O BUZZER
+#include "hardware/pwm.h"
 #include "lwip/tcp.h"
 
 // Inclusões do projeto
@@ -33,7 +33,7 @@
 #define BOTAO_A_PIN 5
 #define BOTAO_B_PIN 6
 #define JOYSTICK_PIN 26
-#define BUZZER_PIN 10 // <-- NOVO PINO PARA O BUZZER
+#define BUZZER_PIN 10
 
 /* ---- Configurações de LEDs RGB -------------------------------- */
 #define LED_VERDE_PIN 11
@@ -65,6 +65,12 @@ float umidade_limite_inferior = 40.0f;
 float umidade_limite_superior = 80.0f;
 float pressao_limite_inferior = 1000.0f;
 float pressao_limite_superior = 1030.0f;
+
+/* ---- Configurações de Offset (Calibração) -------------------- */
+float offset_temperatura_aht = 0.0f;
+float offset_temperatura_bmp = 0.0f;
+float offset_umidade = 0.0f;
+float offset_pressao = 0.0f;
 
 /* ---- Status de Conexão ---------------------------------------- */
 bool wifi_conectado = false;
@@ -104,7 +110,7 @@ struct http_state {
     size_t sent;
 };
 
-/* ---- Página HTML (sem alterações) ----------------------------- */
+/* ---- Página HTML Principal (Mais Leve) ----------------------- */
 const char HTML_BODY[] =
     "<!DOCTYPE html><html><head><meta charset='UTF-8'><title>PicoAtmos - Monitor Atmosférico</title>"
     "<meta name='viewport' content='width=device-width, initial-scale=1.0'>"
@@ -113,6 +119,11 @@ const char HTML_BODY[] =
     "body { font-family: sans-serif; text-align: center; padding: 20px; margin: 0; background: #f0f8ff; }"
     ".container { max-width: 1200px; margin: 0 auto; background: white; padding: 20px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }"
     "h1 { color: #2c3e50; margin-top: 0; }"
+    ".nav-buttons { margin: 20px 0; display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }"
+    ".nav-btn { background: #3498db; color: white; border: none; padding: 10px 20px; border-radius: 4px; cursor: pointer; text-decoration: none; }"
+    ".nav-btn:hover { background: #2980b9; }"
+    ".calibration-btn { background: #e67e22; }"
+    ".calibration-btn:hover { background: #d35400; }"
     ".sensor-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 15px; margin: 20px 0; }"
     ".sensor-card { background: #f8f9fa; padding: 15px; border-radius: 8px; border-left: 4px solid #3498db; }"
     ".sensor-value { font-size: 24px; font-weight: bold; color: #2c3e50; }"
@@ -144,10 +155,7 @@ const char HTML_BODY[] =
     "</style>"
     "<script>"
     "let charts = {};"
-    "let chartData = {"
-    "tempMedia: [], umidade: [], pressao: [],"
-    "labels: []"
-    "};"
+    "let chartData = { tempMedia: [], umidade: [], pressao: [], labels: [] };"
     "function atualizarLimites() {"
     "const tempMin = document.getElementById('temp_min').value;"
     "const tempMax = document.getElementById('temp_max').value;"
@@ -202,64 +210,22 @@ const char HTML_BODY[] =
     "const ctx2 = document.getElementById('chartUmidade').getContext('2d');"
     "const ctx3 = document.getElementById('chartPressao').getContext('2d');"
     "charts.tempMedia = new Chart(ctx1, {"
-    "type: 'line',"
-    "data: {"
-    "labels: chartData.labels,"
-    "datasets: [{"
-    "label: 'Temperatura Média (°C)',"
-    "data: chartData.tempMedia,"
-    "borderColor: '#e74c3c',"
-    "backgroundColor: 'rgba(231, 76, 60, 0.1)',"
-    "tension: 0.4"
-    "}]"
-    "},"
-    "options: {"
-    "responsive: true,"
-    "maintainAspectRatio: false,"
-    "scales: {"
-    "y: { beginAtZero: false }"
-    "}"
-    "}"
+    "type: 'line', data: { labels: chartData.labels, datasets: [{"
+    "label: 'Temperatura Média (°C)', data: chartData.tempMedia,"
+    "borderColor: '#e74c3c', backgroundColor: 'rgba(231, 76, 60, 0.1)', tension: 0.4"
+    "}]}, options: { responsive: true, maintainAspectRatio: false, scales: { y: { beginAtZero: false }}}"
     "});"
     "charts.umidade = new Chart(ctx2, {"
-    "type: 'line',"
-    "data: {"
-    "labels: chartData.labels,"
-    "datasets: [{"
-    "label: 'Umidade (%)',"
-    "data: chartData.umidade,"
-    "borderColor: '#3498db',"
-    "backgroundColor: 'rgba(52, 152, 219, 0.1)',"
-    "tension: 0.4"
-    "}]"
-    "},"
-    "options: {"
-    "responsive: true,"
-    "maintainAspectRatio: false,"
-    "scales: {"
-    "y: { beginAtZero: true, max: 100 }"
-    "}"
-    "}"
+    "type: 'line', data: { labels: chartData.labels, datasets: [{"
+    "label: 'Umidade (%)', data: chartData.umidade,"
+    "borderColor: '#3498db', backgroundColor: 'rgba(52, 152, 219, 0.1)', tension: 0.4"
+    "}]}, options: { responsive: true, maintainAspectRatio: false, scales: { y: { beginAtZero: true, max: 100 }}}"
     "});"
     "charts.pressao = new Chart(ctx3, {"
-    "type: 'line',"
-    "data: {"
-    "labels: chartData.labels,"
-    "datasets: [{"
-    "label: 'Pressão (hPa)',"
-    "data: chartData.pressao,"
-    "borderColor: '#27ae60',"
-    "backgroundColor: 'rgba(39, 174, 96, 0.1)',"
-    "tension: 0.4"
-    "}]"
-    "},"
-    "options: {"
-    "responsive: true,"
-    "maintainAspectRatio: false,"
-    "scales: {"
-    "y: { beginAtZero: false }"
-    "}"
-    "}"
+    "type: 'line', data: { labels: chartData.labels, datasets: [{"
+    "label: 'Pressão (hPa)', data: chartData.pressao,"
+    "borderColor: '#27ae60', backgroundColor: 'rgba(39, 174, 96, 0.1)', tension: 0.4"
+    "}]}, options: { responsive: true, maintainAspectRatio: false, scales: { y: { beginAtZero: false }}}"
     "});"
     "}"
     "function atualizarGraficos(data) {"
@@ -271,10 +237,7 @@ const char HTML_BODY[] =
     "chartData.labels.push(tempo);"
     "const maxPoints = 30;"
     "if (chartData.labels.length > maxPoints) {"
-    "chartData.tempMedia.shift();"
-    "chartData.umidade.shift();"
-    "chartData.pressao.shift();"
-    "chartData.labels.shift();"
+    "chartData.tempMedia.shift(); chartData.umidade.shift(); chartData.pressao.shift(); chartData.labels.shift();"
     "}"
     "Object.values(charts).forEach(chart => chart.update('none'));"
     "}"
@@ -288,114 +251,168 @@ const char HTML_BODY[] =
     "document.getElementById('temp_range_display').innerText = data.temp_min.toFixed(1) + ' - ' + data.temp_max.toFixed(1);"
     "document.getElementById('umid_range_display').innerText = data.umid_min.toFixed(1) + ' - ' + data.umid_max.toFixed(1);"
     "document.getElementById('press_range_display').innerText = data.press_min.toFixed(1) + ' - ' + data.press_max.toFixed(1);"
-    "atualizarGraficos(data);"
-    "atualizarStatusSistema(data);"
+    "atualizarGraficos(data); atualizarStatusSistema(data);"
     "});"
     "}"
-    "window.onload = function() {"
-    "criarGraficos();"
-    "atualizarDados();"
-    "setInterval(atualizarDados, 2000);"
-    "};"
+    "window.onload = function() { criarGraficos(); atualizarDados(); setInterval(atualizarDados, 2000); };"
     "</script></head><body>"
     "<div class='container'>"
     "<h1>🌡️ PicoAtmos - Monitor Atmosférico</h1>"
+    "<div class='nav-buttons'>"
+    "<a href='/' class='nav-btn'>🏠 Principal</a>"
+    "<a href='/calibracao' class='nav-btn calibration-btn'>🔧 Calibração</a>"
+    "</div>"
     "<div class='sensor-grid'>"
-    "<div class='sensor-card'>"
-    "<div>Temperatura AHT</div>"
-    "<div class='sensor-value'><span id='temp_aht'>--</span><span class='sensor-unit'>°C</span></div>"
-    "</div>"
-    "<div class='sensor-card'>"
-    "<div>Temperatura BMP</div>"
-    "<div class='sensor-value'><span id='temp_bmp'>--</span><span class='sensor-unit'>°C</span></div>"
-    "</div>"
-    "<div class='sensor-card'>"
-    "<div>Temperatura Média</div>"
-    "<div class='sensor-value'><span id='temp_atual'>--</span><span class='sensor-unit'>°C</span></div>"
-    "</div>"
-    "<div class='sensor-card'>"
-    "<div>Umidade</div>"
-    "<div class='sensor-value'><span id='umid_atual'>--</span><span class='sensor-unit'>%</span></div>"
-    "</div>"
-    "<div class='sensor-card'>"
-    "<div>Pressão</div>"
-    "<div class='sensor-value'><span id='press_atual'>--</span><span class='sensor-unit'>hPa</span></div>"
-    "</div>"
+    "<div class='sensor-card'><div>Temperatura AHT</div><div class='sensor-value'><span id='temp_aht'>--</span><span class='sensor-unit'>°C</span></div></div>"
+    "<div class='sensor-card'><div>Temperatura BMP</div><div class='sensor-value'><span id='temp_bmp'>--</span><span class='sensor-unit'>°C</span></div></div>"
+    "<div class='sensor-card'><div>Temperatura Média</div><div class='sensor-value'><span id='temp_atual'>--</span><span class='sensor-unit'>°C</span></div></div>"
+    "<div class='sensor-card'><div>Umidade</div><div class='sensor-value'><span id='umid_atual'>--</span><span class='sensor-unit'>%</span></div></div>"
+    "<div class='sensor-card'><div>Pressão</div><div class='sensor-value'><span id='press_atual'>--</span><span class='sensor-unit'>hPa</span></div></div>"
     "</div>"
     "<div class='limits-container'>"
-    "<h3>Configurações de Limites</h3>"
-    "<div class='limits-section'>"
-    "<div class='limits-title'>Temperatura</div>"
-    "<div class='limits-row'>"
-    "<span>Faixa: <span id='temp_range_display' class='range-display'>--</span>°C</span>"
-    "<div class='limits-inputs'>"
-    "<input type='number' id='temp_min' step='0.1' value='20.0' placeholder='Mín'>"
-    "<span>-</span>"
-    "<input type='number' id='temp_max' step='0.1' value='30.0' placeholder='Máx'>"
-    "</div>"
-    "</div>"
-    "</div>"
-    "<div class='limits-section'>"
-    "<div class='limits-title'>Umidade</div>"
-    "<div class='limits-row'>"
-    "<span>Faixa: <span id='umid_range_display' class='range-display'>--</span>%</span>"
-    "<div class='limits-inputs'>"
-    "<input type='number' id='umid_min' step='1' value='40' placeholder='Mín'>"
-    "<span>-</span>"
-    "<input type='number' id='umid_max' step='1' value='80' placeholder='Máx'>"
-    "</div>"
-    "</div>"
-    "</div>"
-    "<div class='limits-section'>"
-    "<div class='limits-title'>Pressão</div>"
-    "<div class='limits-row'>"
-    "<span>Faixa: <span id='press_range_display' class='range-display'>--</span>hPa</span>"
-    "<div class='limits-inputs'>"
-    "<input type='number' id='press_min' step='0.1' value='1000.0' placeholder='Mín'>"
-    "<span>-</span>"
-    "<input type='number' id='press_max' step='0.1' value='1030.0' placeholder='Máx'>"
-    "</div>"
-    "</div>"
-    "</div>"
+    "<h3>Configurações de Limites de Alerta</h3>"
+    "<div class='limits-section'><div class='limits-title'>Temperatura</div>"
+    "<div class='limits-row'><span>Faixa: <span id='temp_range_display' class='range-display'>--</span>°C</span>"
+    "<div class='limits-inputs'><input type='number' id='temp_min' step='0.1' value='20.0' placeholder='Mín'><span>-</span><input type='number' id='temp_max' step='0.1' value='30.0' placeholder='Máx'></div></div></div>"
+    "<div class='limits-section'><div class='limits-title'>Umidade</div>"
+    "<div class='limits-row'><span>Faixa: <span id='umid_range_display' class='range-display'>--</span>%</span>"
+    "<div class='limits-inputs'><input type='number' id='umid_min' step='1' value='40' placeholder='Mín'><span>-</span><input type='number' id='umid_max' step='1' value='80' placeholder='Máx'></div></div></div>"
+    "<div class='limits-section'><div class='limits-title'>Pressão</div>"
+    "<div class='limits-row'><span>Faixa: <span id='press_range_display' class='range-display'>--</span>hPa</span>"
+    "<div class='limits-inputs'><input type='number' id='press_min' step='0.1' value='1000.0' placeholder='Mín'><span>-</span><input type='number' id='press_max' step='0.1' value='1030.0' placeholder='Máx'></div></div></div>"
     "<button onclick='atualizarLimites()'>Salvar Limites</button>"
     "</div>"
-    "<div class='charts-container'>"
-    "<h3>Gráficos em Tempo Real</h3>"
+    "<div class='charts-container'><h3>Gráficos em Tempo Real</h3>"
     "<div class='charts-grid'>"
-    "<div class='chart-card'>"
-    "<div class='chart-title'>Temperatura Média</div>"
-    "<canvas id='chartTempMedia'></canvas>"
-    "</div>"
-    "<div class='chart-card'>"
-    "<div class='chart-title'>Umidade</div>"
-    "<canvas id='chartUmidade'></canvas>"
-    "</div>"
-    "<div class='chart-card'>"
-    "<div class='chart-title'>Pressão</div>"
-    "<canvas id='chartPressao'></canvas>"
-    "</div>"
-    "</div>"
-    "</div>"
-    "<div class='system-status'>"
-    "<h3>📊 Estado do Sistema</h3>"
+    "<div class='chart-card'><div class='chart-title'>Temperatura Média</div><canvas id='chartTempMedia'></canvas></div>"
+    "<div class='chart-card'><div class='chart-title'>Umidade</div><canvas id='chartUmidade'></canvas></div>"
+    "<div class='chart-card'><div class='chart-title'>Pressão</div><canvas id='chartPressao'></canvas></div>"
+    "</div></div>"
+    "<div class='system-status'><h3>📊 Estado do Sistema</h3>"
     "<div class='status-list'>"
-    "<div id='temp_status' class='status-item'>"
-    "<span class='status-label'>Temperatura: </span><span class='status-value'>--</span>"
+    "<div id='temp_status' class='status-item'><span class='status-label'>Temperatura: </span><span class='status-value'>--</span></div>"
+    "<div id='umid_status' class='status-item'><span class='status-label'>Umidade: </span><span class='status-value'>--</span></div>"
+    "<div id='press_status' class='status-item'><span class='status-label'>Pressão: </span><span class='status-value'>--</span></div>"
+    "</div></div>"
+    "<div class='status-info'><div>Sistema PicoAtmos ativo</div><div>Atualizando a cada 2 segundos</div></div>"
+    "</div></body></html>";
+
+/* ---- Página de Calibração Separada --------------------------- */
+const char HTML_CALIBRACAO[] =
+    "<!DOCTYPE html><html><head><meta charset='UTF-8'><title>Calibração - PicoAtmos</title>"
+    "<meta name='viewport' content='width=device-width, initial-scale=1.0'>"
+    "<style>"
+    "body { font-family: sans-serif; text-align: center; padding: 20px; margin: 0; background: #f0f8ff; }"
+    ".container { max-width: 800px; margin: 0 auto; background: white; padding: 20px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }"
+    "h1 { color: #2c3e50; margin-top: 0; }"
+    ".nav-buttons { margin: 20px 0; display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }"
+    ".nav-btn { background: #3498db; color: white; border: none; padding: 10px 20px; border-radius: 4px; cursor: pointer; text-decoration: none; }"
+    ".nav-btn:hover { background: #2980b9; }"
+    ".calibration-container { margin: 20px 0; background: #e8f6f3; border-radius: 8px; padding: 20px; }"
+    ".calibration-help { background: #d5f4e6; padding: 15px; border-radius: 6px; margin-bottom: 20px; text-align: left; font-size: 14px; line-height: 1.4; }"
+    ".calibration-help h4 { margin-top: 0; color: #2c3e50; }"
+    ".calibration-section { margin: 15px 0; padding: 15px; background: #ffffff; border-radius: 8px; border: 1px solid #bdc3c7; }"
+    ".limits-title { font-weight: bold; margin-bottom: 10px; color: #2c3e50; }"
+    ".limits-row { display: flex; justify-content: space-between; align-items: center; margin: 8px 0; flex-wrap: wrap; gap: 10px; }"
+    ".limits-inputs { display: flex; gap: 10px; align-items: center; }"
+    "input { padding: 8px; border: 1px solid #ddd; border-radius: 4px; width: 100px; }"
+    "button { background: #e67e22; color: white; border: none; padding: 10px 20px; border-radius: 4px; cursor: pointer; }"
+    "button:hover { background: #d35400; }"
+    ".current-values { margin: 20px 0; padding: 15px; background: #f8f9fa; border-radius: 8px; }"
+    ".sensor-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin: 15px 0; }"
+    ".sensor-card { background: #ffffff; padding: 15px; border-radius: 8px; border: 1px solid #ddd; }"
+    ".sensor-value { font-size: 18px; font-weight: bold; color: #2c3e50; }"
+    "</style>"
+    "<script>"
+    "function atualizarCalibracoes() {"
+    "const offsetTempAht = document.getElementById('offset_temp_aht').value;"
+    "const offsetTempBmp = document.getElementById('offset_temp_bmp').value;"
+    "const offsetUmid = document.getElementById('offset_umid').value;"
+    "const offsetPress = document.getElementById('offset_press').value;"
+    "fetch('/set_offsets?offset_temp_aht=' + offsetTempAht + '&offset_temp_bmp=' + offsetTempBmp + '&offset_umid=' + offsetUmid + '&offset_press=' + offsetPress)"
+    ".then(response => response.text())"
+    ".then(data => { console.log(data); alert('Calibrações salvas com sucesso!'); });"
+    "}"
+    "function atualizarDados() {"
+    "fetch('/dados').then(res => res.json()).then(data => {"
+    "document.getElementById('temp_aht_atual').innerText = data.temp_aht.toFixed(2);"
+    "document.getElementById('temp_bmp_atual').innerText = data.temp_bmp.toFixed(2);"
+    "document.getElementById('umid_atual').innerText = data.umidade.toFixed(2);"
+    "document.getElementById('press_atual').innerText = data.pressao.toFixed(2);"
+    "document.getElementById('offset_temp_aht').value = data.offset_temp_aht.toFixed(2);"
+    "document.getElementById('offset_temp_bmp').value = data.offset_temp_bmp.toFixed(2);"
+    "document.getElementById('offset_umid').value = data.offset_umid.toFixed(2);"
+    "document.getElementById('offset_press').value = data.offset_press.toFixed(2);"
+    "});"
+    "}"
+    "window.onload = function() { atualizarDados(); setInterval(atualizarDados, 3000); };"
+    "</script></head><body>"
+    "<div class='container'>"
+    "<h1>🔧 Calibração dos Sensores</h1>"
+    "<div class='nav-buttons'>"
+    "<a href='/' class='nav-btn'>🏠 Voltar ao Principal</a>"
     "</div>"
-    "<div id='umid_status' class='status-item'>"
-    "<span class='status-label'>Umidade: </span><span class='status-value'>--</span>"
-    "</div>"
-    "<div id='press_status' class='status-item'>"
-    "<span class='status-label'>Pressão: </span><span class='status-value'>--</span>"
-    "</div>"
-    "</div>"
-    "</div>"
-    "<div class='status-info'>"
-    "<div>Sistema PicoAtmos ativo</div>"
-    "<div>Atualizando a cada 2 segundos</div>"
+    "<div class='current-values'>"
+    "<h3>Valores Atuais dos Sensores</h3>"
+    "<div class='sensor-grid'>"
+    "<div class='sensor-card'><div>Temperatura AHT20</div><div class='sensor-value'><span id='temp_aht_atual'>--</span>°C</div></div>"
+    "<div class='sensor-card'><div>Temperatura BMP280</div><div class='sensor-value'><span id='temp_bmp_atual'>--</span>°C</div></div>"
+    "<div class='sensor-card'><div>Umidade</div><div class='sensor-value'><span id='umid_atual'>--</span>%</div></div>"
+    "<div class='sensor-card'><div>Pressão</div><div class='sensor-value'><span id='press_atual'>--</span> hPa</div></div>"
     "</div>"
     "</div>"
-    "</body></html>";
+    "<div class='calibration-container'>"
+    "<h3>Ajustes de Calibração (Offset)</h3>"
+    "<div class='calibration-help'>"
+    "<h4>Como usar a calibração:</h4>"
+    "<p>Use os campos abaixo para compensar variações dos sensores. Compare a leitura atual com um medidor de referência confiável e insira a diferença para corrigir.</p>"
+    "<p><strong>Exemplo 1 (Offset Positivo):</strong> Se o sensor marca 24.5°C e o valor real é 25.0°C, insira <strong>+0.5</strong></p>"
+    "<p><strong>Exemplo 2 (Offset Negativo):</strong> Se o sensor marca 26.2°C e o valor real é 26.0°C, insira <strong>-0.2</strong></p>"
+    "<p><strong>Importante:</strong> A calibração se aplica a todas as telas, gráficos e alertas do sistema.</p>"
+    "</div>"
+    "<div class='calibration-section'>"
+    "<div class='limits-title'>Temperatura AHT20</div>"
+    "<div class='limits-row'>"
+    "<span>Offset de Calibração:</span>"
+    "<div class='limits-inputs'>"
+    "<input type='number' id='offset_temp_aht' step='0.01' value='0.00' placeholder='±0.00'>"
+    "<span>°C</span>"
+    "</div>"
+    "</div>"
+    "</div>"
+    "<div class='calibration-section'>"
+    "<div class='limits-title'>Temperatura BMP280</div>"
+    "<div class='limits-row'>"
+    "<span>Offset de Calibração:</span>"
+    "<div class='limits-inputs'>"
+    "<input type='number' id='offset_temp_bmp' step='0.01' value='0.00' placeholder='±0.00'>"
+    "<span>°C</span>"
+    "</div>"
+    "</div>"
+    "</div>"
+    "<div class='calibration-section'>"
+    "<div class='limits-title'>Umidade</div>"
+    "<div class='limits-row'>"
+    "<span>Offset de Calibração:</span>"
+    "<div class='limits-inputs'>"
+    "<input type='number' id='offset_umid' step='0.01' value='0.00' placeholder='±0.00'>"
+    "<span>%</span>"
+    "</div>"
+    "</div>"
+    "</div>"
+    "<div class='calibration-section'>"
+    "<div class='limits-title'>Pressão</div>"
+    "<div class='limits-row'>"
+    "<span>Offset de Calibração:</span>"
+    "<div class='limits-inputs'>"
+    "<input type='number' id='offset_press' step='0.01' value='0.00' placeholder='±0.00'>"
+    "<span>hPa</span>"
+    "</div>"
+    "</div>"
+    "</div>"
+    "<button onclick='atualizarCalibracoes()'>Salvar Calibrações</button>"
+    "</div>"
+    "</div></body></html>";
 
 /* ---- Protótipos de Funções ------------------------------------ */
 void configurar_perifericos(ssd1306_t *, struct bmp280_calib_param *);
@@ -422,13 +439,12 @@ void atualizar_leds_rgb(EstadoSistema estado);
 const char* estado_para_string_cor(EstadoSistema estado);
 const char* estado_para_string_animacao(EstadoSistema estado);
 
-// <-- NOVAS FUNÇÕES E PROTÓTIPOS PARA O BUZZER -->
+// Funções para o buzzer
 void configurar_buzzer(void);
 void atualizar_buzzer(EstadoSistema estado);
 void set_buzzer_freq(uint slice_num, float freq);
 
-
-/* ---------------- Funções de Servidor HTTP (sem alterações) ---- */
+/* ---------------- Funções de Servidor HTTP -------------------- */
 static err_t http_sent(void *arg, struct tcp_pcb *tpcb, u16_t len) {
     struct http_state *hs = (struct http_state *)arg;
     hs->sent += len;
@@ -452,16 +468,19 @@ static err_t http_recv(void *arg, struct tcp_pcb *tpcb, struct pbuf *p, err_t er
         return ERR_MEM;
     }
     hs->sent = 0;
+    
     if (strstr(req, "GET /dados")) {
-        char json_payload[512];
+        char json_payload[768];
         int json_len = snprintf(json_payload, sizeof(json_payload),
             "{\"temp_aht\":%.2f,\"temp_bmp\":%.2f,\"temp_media\":%.2f,\"umidade\":%.2f,\"pressao\":%.2f,"
             "\"temp_min\":%.2f,\"temp_max\":%.2f,\"umid_min\":%.2f,\"umid_max\":%.2f,"
-            "\"press_min\":%.2f,\"press_max\":%.2f}",
+            "\"press_min\":%.2f,\"press_max\":%.2f,"
+            "\"offset_temp_aht\":%.2f,\"offset_temp_bmp\":%.2f,\"offset_umid\":%.2f,\"offset_press\":%.2f}",
             temperatura_aht, temperatura_bmp, temperatura_media, umidade, pressao / 100.0f,
             temperatura_limite_inferior, temperatura_limite_superior,
             umidade_limite_inferior, umidade_limite_superior,
-            pressao_limite_inferior, pressao_limite_superior);
+            pressao_limite_inferior, pressao_limite_superior,
+            offset_temperatura_aht, offset_temperatura_bmp, offset_umidade, offset_pressao);
         hs->len = snprintf(hs->response, sizeof(hs->response),
             "HTTP/1.1 200 OK\r\n"
             "Content-Type: application/json\r\n"
@@ -491,6 +510,36 @@ static err_t http_recv(void *arg, struct tcp_pcb *tpcb, struct pbuf *p, err_t er
             "\r\n"
             "%s",
             (int)strlen(txt), txt);
+    }
+    else if (strstr(req, "GET /set_offsets")) {
+        float offset_temp_aht, offset_temp_bmp, offset_umid, offset_press;
+        sscanf(req, "GET /set_offsets?offset_temp_aht=%f&offset_temp_bmp=%f&offset_umid=%f&offset_press=%f",
+            &offset_temp_aht, &offset_temp_bmp, &offset_umid, &offset_press);
+
+        offset_temperatura_aht = offset_temp_aht;
+        offset_temperatura_bmp = offset_temp_bmp;
+        offset_umidade = offset_umid;
+        offset_pressao = offset_press;
+        
+        const char *txt = "Calibracoes atualizadas";
+        hs->len = snprintf(hs->response, sizeof(hs->response),
+            "HTTP/1.1 200 OK\r\n"
+            "Content-Type: text/plain\r\n"
+            "Content-Length: %d\r\n"
+            "Connection: close\r\n"
+            "\r\n"
+            "%s",
+            (int)strlen(txt), txt);
+    }
+    else if (strstr(req, "GET /calibracao")) {
+        hs->len = snprintf(hs->response, sizeof(hs->response),
+            "HTTP/1.1 200 OK\r\n"
+            "Content-Type: text/html\r\n"
+            "Content-Length: %d\r\n"
+            "Connection: close\r\n"
+            "\r\n"
+            "%s",
+            (int)strlen(HTML_CALIBRACAO), HTML_CALIBRACAO);
     }
     else {
         hs->len = snprintf(hs->response, sizeof(hs->response),
@@ -611,41 +660,26 @@ void atualizar_leds_rgb(EstadoSistema estado) {
     }
 }
 
-/**
- * @brief Define a frequência do PWM para o buzzer.
- * @param slice_num O slice do PWM a ser usado.
- * @param freq A frequência desejada em Hz.
- */
 void set_buzzer_freq(uint slice_num, float freq) {
     uint32_t clock = 125000000;
-    // Cast freq to uint32_t for the modulo operation to avoid compiler error.
-    // This is safe because the frequencies used are whole numbers.
     uint32_t f_int = (uint32_t)freq;
-    if (f_int == 0) return; // Avoid division by zero
+    if (f_int == 0) return;
 
     uint32_t divider16 = clock / f_int / 4096 + (clock % (f_int * 4096) != 0);
     if (divider16 / 16 == 0) divider16 = 16;
-
-    // Use the original float 'freq' for the floating point division to maintain precision
     uint32_t wrap = (uint32_t)(clock * 16.0f / divider16 / freq) - 1;
     
     pwm_set_clkdiv_int_frac(slice_num, divider16 / 16, divider16 & 0xF);
     pwm_set_wrap(slice_num, wrap);
-    // Define o duty cycle para 50% para um som mais audível
     pwm_set_chan_level(slice_num, pwm_gpio_to_channel(BUZZER_PIN), wrap / 2);
 }
 
-/**
- * @brief Controla o buzzer com base no estado do sistema, de forma não-bloqueante.
- * @param estado O estado atual do sistema.
- */
 void atualizar_buzzer(EstadoSistema estado) {
     static EstadoSistema estado_anterior_buzzer = ESTADO_NORMAL;
     static uint64_t proximo_evento_ms = 0;
     static int passo_sequencia = 0;
     uint slice_num = pwm_gpio_to_slice_num(BUZZER_PIN);
 
-    // Se o estado mudou, reinicia a sequência de som.
     if (estado != estado_anterior_buzzer) {
         passo_sequencia = 0;
         proximo_evento_ms = 0;
@@ -653,7 +687,6 @@ void atualizar_buzzer(EstadoSistema estado) {
         estado_anterior_buzzer = estado;
     }
 
-    // Se estiver no estado normal, garante que o buzzer esteja desligado e retorna.
     if (estado == ESTADO_NORMAL) {
         pwm_set_enabled(slice_num, false);
         return;
@@ -661,56 +694,55 @@ void atualizar_buzzer(EstadoSistema estado) {
 
     uint64_t agora_ms = to_ms_since_boot(get_absolute_time());
     if (agora_ms < proximo_evento_ms) {
-        return; // Aguarda o tempo para o próximo passo da sequência.
+        return;
     }
 
     bool acima_limite = (estado == ESTADO_TEMP_ALTA || estado == ESTADO_UMID_ALTA || estado == ESTADO_PRESS_ALTA);
 
-    if (acima_limite) { // Beeps agudos (bip-bip-bip...)
+    if (acima_limite) {
         switch(passo_sequencia) {
-            case 0: // bip 1 ON
-                set_buzzer_freq(slice_num, 2500); // Tom agudo
+            case 0:
+                set_buzzer_freq(slice_num, 2500);
                 pwm_set_enabled(slice_num, true);
                 proximo_evento_ms = agora_ms + 100;
                 break;
-            case 1: // bip 1 OFF
+            case 1:
                 pwm_set_enabled(slice_num, false);
                 proximo_evento_ms = agora_ms + 100;
                 break;
-            case 2: // bip 2 ON
+            case 2:
                 pwm_set_enabled(slice_num, true);
                 proximo_evento_ms = agora_ms + 100;
                 break;
-            case 3: // bip 2 OFF
+            case 3:
                 pwm_set_enabled(slice_num, false);
                 proximo_evento_ms = agora_ms + 100;
                 break;
-            case 4: // bip 3 ON
+            case 4:
                 pwm_set_enabled(slice_num, true);
                 proximo_evento_ms = agora_ms + 100;
                 break;
-            case 5: // bip 3 OFF + Pausa longa
+            case 5:
                 pwm_set_enabled(slice_num, false);
                 proximo_evento_ms = agora_ms + 1500;
                 break;
         }
-        passo_sequencia = (passo_sequencia + 1) % 6; // Cicla de 0 a 5
-    } else { // Tom grave (biiiiip... biiiiip...)
+        passo_sequencia = (passo_sequencia + 1) % 6;
+    } else {
         switch(passo_sequencia) {
-            case 0: // biiiiip ON
-                set_buzzer_freq(slice_num, 500); // Tom grave
+            case 0:
+                set_buzzer_freq(slice_num, 500);
                 pwm_set_enabled(slice_num, true);
-                proximo_evento_ms = agora_ms + 400; // Duração do bip
+                proximo_evento_ms = agora_ms + 400;
                 break;
-            case 1: // biiiiip OFF + Pausa
+            case 1:
                 pwm_set_enabled(slice_num, false);
-                proximo_evento_ms = agora_ms + 1000; // Intervalo entre bips
+                proximo_evento_ms = agora_ms + 1000;
                 break;
         }
-        passo_sequencia = (passo_sequencia + 1) % 2; // Cicla de 0 a 1
+        passo_sequencia = (passo_sequencia + 1) % 2;
     }
 }
-
 
 /* ================================================================ */
 /* -------------------------- FUNÇÃO MAIN ------------------------- */
@@ -728,7 +760,7 @@ int main() {
     configurar_botoes();
     configurar_joystick();
     configurar_leds_rgb();
-    configurar_buzzer(); // <-- CHAMA A CONFIGURAÇÃO DO BUZZER
+    configurar_buzzer();
     configurar_wifi(&tela);
 
     while (true) {
@@ -759,9 +791,8 @@ int main() {
                 atualizar_tela_flag = true;
         }
 
-        // --- ATUALIZAÇÕES CONTÍNUAS ---
         atualizar_matriz_pelo_estado(estado_global);
-        atualizar_buzzer(estado_global); // <-- ATUALIZA O BUZZER A CADA LOOP
+        atualizar_buzzer(estado_global);
 
         if (atualizar_tela_flag) {
             atualizar_tela(&tela, temperatura_aht, temperatura_bmp, temperatura_media, umidade, pressao);
@@ -825,11 +856,8 @@ void configurar_leds_rgb(void) {
 }
 
 void configurar_buzzer(void) {
-    // Configura o pino do buzzer para a função PWM
     gpio_set_function(BUZZER_PIN, GPIO_FUNC_PWM);
-    // Encontra o slice do PWM correspondente ao pino
     uint slice_num = pwm_gpio_to_slice_num(BUZZER_PIN);
-    // Garante que o PWM comece desligado
     pwm_set_enabled(slice_num, false);
 }
 
@@ -868,7 +896,7 @@ void configurar_wifi(ssd1306_t *tela) {
     sleep_ms(2000);
 }
 
-/* ---------------- Callbacks de Interrupção (sem alterações) ---- */
+/* ---------------- Callbacks de Interrupção -------------------- */
 void callback_botoes(uint gpio, uint32_t eventos) {
     static uint64_t ultimo_pressionamento_a = 0, ultimo_pressionamento_b = 0;
     uint64_t agora = time_us_64();
@@ -1010,7 +1038,6 @@ void mostrar_tela_led_status(ssd1306_t *tela) {
     ssd1306_send_data(tela);
 }
 
-// Funções de gráfico (sem alterações)
 void mostrar_tela_grafico(ssd1306_t *tela) {
     ssd1306_fill(tela, 0);
     const uint8_t gx = 20, gy = 52, H = 40, W = 105;
@@ -1252,13 +1279,17 @@ void atualizar_tela(ssd1306_t *tela, float temp_aht, float temp_bmp, float temp_
 void ler_e_exibir_dados(struct bmp280_calib_param *parametros, float *temp_aht, float *temp_bmp, float *temp_media, float *umid, float *press) {
     AHT20_Data dados_aht;
     aht20_read(I2C_SENSORES_PORT, &dados_aht);
-    *temp_aht = dados_aht.temperature;
-    *umid = dados_aht.humidity;
+    
+    // Aplicação dos offsets de calibração
+    *temp_aht = dados_aht.temperature + offset_temperatura_aht;
+    *umid = dados_aht.humidity + offset_umidade;
+    
     int32_t temp_raw, press_raw;
     bmp280_read_raw(I2C_SENSORES_PORT, &temp_raw, &press_raw);
     int32_t temp_convertida = bmp280_convert_temp(temp_raw, parametros);
     int32_t press_convertida = bmp280_convert_pressure(press_raw, temp_raw, parametros);
-    *temp_bmp = temp_convertida / 100.0f;
-    *press = press_convertida;
+    
+    *temp_bmp = (temp_convertida / 100.0f) + offset_temperatura_bmp;
+    *press = press_convertida + (offset_pressao * 100.0f); // Offset em hPa convertido para Pa
     *temp_media = (*temp_aht + *temp_bmp) / 2.0f;
 }
