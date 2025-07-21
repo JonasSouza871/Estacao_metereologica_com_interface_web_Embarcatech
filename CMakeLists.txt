@@ -40,6 +40,7 @@ include_directories(
     ${CMAKE_SOURCE_DIR}/lib
     ${CMAKE_SOURCE_DIR}/lib/Display_Bibliotecas
     ${CMAKE_SOURCE_DIR}/lib/Matriz_Bibliotecas
+    ${CMAKE_SOURCE_DIR}/lib/Wifi_Bibliotecas
 )
 
 # Define os arquivos do projeto
@@ -49,9 +50,9 @@ add_executable(EstacaoMeteorologica_PicoW
     lib/Matriz_Bibliotecas/matriz_led.c
     lib/aht20.c
     lib/bmp280.c
-    lib/lwipopts_examples_common.h
-    lib/lwipopts.h
-    html.c
+    lib/Wifi_Bibliotecas/lwipopts_examples_common.h
+    lib/Wifi_Bibliotecas/lwipopts.h
+    lib/html.c
 )
 
 target_link_libraries(EstacaoMeteorologica_PicoW

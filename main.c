@@ -19,7 +19,7 @@
 #include "ssd1306.h"
 #include "font.h"
 #include "matriz_led.h"
-#include "html.h"  // <-- NOVA INCLUSÃO
+#include "html.h" // Biblioteca com todos os codigos HTML
 
 /* ---- Configurações de Hardware -------------------------------- */
 #define I2C_SENSORES_PORT i2c0
