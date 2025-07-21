@@ -5,10 +5,15 @@
     <title>PicoAtmos - Monitor Atmosférico (Interface)</title>
     <meta name='viewport' content='width=device-width, initial-scale=1.0'>
     <script src='https://cdn.jsdelivr.net/npm/chart.js'></script>
+    
+    <!-- ========== Estilos CSS ========== -->
     <style>
+        /* ---------- Layout Principal ---------- */
         body { font-family: sans-serif; text-align: center; padding: 20px; margin: 0; background: #f0f8ff; }
         .container { max-width: 1200px; margin: 0 auto; background: white; padding: 20px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
         h1 { color: #2c3e50; margin-top: 0; }
+        
+        /* ---------- Navegação ---------- */
         .nav-buttons { margin: 20px 0; display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
         .nav-btn { background: #3498db; color: white; border: none; padding: 10px 20px; border-radius: 4px; cursor: pointer; text-decoration: none; }
         .nav-btn:hover { background: #2980b9; }
@@ -21,18 +26,26 @@
         .estados-btn:hover { background: #c0392b; }
         .limites-btn { background: #27ae60; }
         .limites-btn:hover { background: #229954; }
+        
+        /* ---------- Cards de Sensores ---------- */
         .sensor-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 15px; margin: 20px 0; }
         .sensor-card { background: #f8f9fa; padding: 15px; border-radius: 8px; border-left: 4px solid #3498db; }
         .sensor-value { font-size: 24px; font-weight: bold; color: #2c3e50; }
         .sensor-unit { font-size: 14px; color: #7f8c8d; }
         .status-info { background: #ecf0f1; padding: 10px; border-radius: 4px; margin-top: 15px; }
+        
+        /* ---------- Sistema de Páginas ---------- */
         .page { display: none; }
         .page.active { display: block; }
+        
+        /* ---------- Gráficos ---------- */
         .charts-container { margin: 30px 0; }
         .charts-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(400px, 1fr)); gap: 20px; }
         .chart-card { background: #f8f9fa; padding: 20px; border-radius: 8px; border: 1px solid #ddd; }
         .chart-title { font-weight: bold; margin-bottom: 15px; color: #2c3e50; text-align: center; }
         canvas { max-width: 100%; height: 300px !important; }
+        
+        /* ---------- Status do Sistema ---------- */
         .system-status { margin: 30px 0; padding: 20px; background: #f8f9fa; border-radius: 8px; border: 1px solid #ddd; }
         .system-status h3 { color: #2c3e50; margin-top: 0; }
         .status-list { display: flex; flex-direction: column; gap: 15px; margin: 20px 0; }
@@ -40,6 +53,8 @@
         .status-item.normal { background: #d4edda; color: #155724; border-left: 5px solid #28a745; }
         .status-label { font-size: 18px; font-weight: bold; }
         .status-value { font-size: 18px; }
+        
+        /* ---------- Legenda de Cores LED ---------- */
         .legend-container { margin: 30px 0; padding: 20px; background: #e8f6f3; border-radius: 8px; }
         .legend-item { margin: 10px 0; padding: 10px; background: white; border-radius: 5px; display: flex; justify-content: space-between; align-items: center; }
         .legend-color { width: 20px; height: 20px; border-radius: 50%; margin-right: 10px; }
@@ -49,6 +64,8 @@
         .legend-roxo { background-color: #6f42c1; }
         .legend-amarelo { background-color: #ffc107; }
         .legend-branco { background-color: #6c757d; border: 1px solid #ddd; }
+        
+        /* ---------- Configuração de Limites ---------- */
         .limits-container { margin: 20px 0; background: #e8f4fd; border-radius: 8px; padding: 20px; }
         .limits-help { background: #d1ecf1; padding: 15px; border-radius: 6px; margin-bottom: 20px; text-align: left; font-size: 14px; line-height: 1.4; }
         .limits-help h4 { margin-top: 0; color: #2c3e50; }
@@ -56,10 +73,14 @@
         .limits-title { font-weight: bold; margin-bottom: 10px; color: #2c3e50; }
         .limits-row { display: flex; justify-content: space-between; align-items: center; margin: 8px 0; flex-wrap: wrap; gap: 10px; }
         .limits-inputs { display: flex; gap: 10px; align-items: center; }
+        
+        /* ---------- Formulários ---------- */
         input { padding: 8px; border: 1px solid #ddd; border-radius: 4px; width: 100px; }
         input:focus { border-color: #27ae60; outline: none; }
         button { background: #27ae60; color: white; border: none; padding: 10px 20px; border-radius: 4px; cursor: pointer; }
         button:hover { background: #229954; }
+        
+        /* ---------- Calibração ---------- */
         .calibration-container { margin: 20px 0; background: #e8f6f3; border-radius: 8px; padding: 20px; }
         .calibration-help { background: #d5f4e6; padding: 15px; border-radius: 6px; margin-bottom: 20px; text-align: left; font-size: 14px; line-height: 1.4; }
         .calibration-section { margin: 15px 0; padding: 15px; background: #ffffff; border-radius: 8px; border: 1px solid #bdc3c7; }
@@ -67,10 +88,13 @@
         .current-values { margin: 20px 0; padding: 15px; background: #f8f9fa; border-radius: 8px; }
     </style>
 </head>
+
 <body>
     <div class='container'>
+        <!-- ========== Cabeçalho ========== -->
         <h1>🌡️ PicoAtmos - Monitor Atmosférico</h1>
         
+        <!-- ========== Navegação Principal ========== -->
         <div class='nav-buttons'>
             <button onclick='mostrarPagina("principal")' class='nav-btn active' id='btn-principal'>🏠 Principal</button>
             <button onclick='mostrarPagina("graficos")' class='nav-btn graficos-btn' id='btn-graficos'>📊 Gráficos</button>
@@ -79,7 +103,7 @@
             <button onclick='mostrarPagina("calibracao")' class='nav-btn calibration-btn' id='btn-calibracao'>🔧 Calibração</button>
         </div>
 
-        <!-- Página Principal -->
+        <!-- ========== Página Principal - Dashboard ========== -->
         <div id='principal' class='page active'>
             <div class='sensor-grid'>
                 <div class='sensor-card'><div>Temperatura AHT</div><div class='sensor-value'>--<span class='sensor-unit'>°C</span></div></div>
@@ -88,10 +112,13 @@
                 <div class='sensor-card'><div>Umidade</div><div class='sensor-value'>--<span class='sensor-unit'>%</span></div></div>
                 <div class='sensor-card'><div>Pressão</div><div class='sensor-value'>--<span class='sensor-unit'>hPa</span></div></div>
             </div>
-            <div class='status-info'><div>Interface PicoAtmos</div><div>Aguardando dados dos sensores</div></div>
+            <div class='status-info'>
+                <div>Interface PicoAtmos</div>
+                <div>Aguardando dados dos sensores</div>
+            </div>
         </div>
 
-        <!-- Página Gráficos -->
+        <!-- ========== Página Gráficos - Visualização de Dados ========== -->
         <div id='graficos' class='page'>
             <h2>📊 Gráficos em Tempo Real</h2>
             <div class='charts-container'>
@@ -103,7 +130,7 @@
             </div>
         </div>
 
-        <!-- Página Estados -->
+        <!-- ========== Página Estados - Monitoramento de Status ========== -->
         <div id='estados' class='page'>
             <h2>🚨 Estados do Sistema</h2>
             <div class='system-status'>
@@ -123,6 +150,7 @@
                     </div>
                 </div>
             </div>
+            
             <div class='legend-container'>
                 <h3>Legenda de Cores LED</h3>
                 <div class='legend-item'><div style='display: flex; align-items: center;'><div class='legend-color legend-verde'></div>Verde</div><div>Sistema Normal</div></div>
@@ -135,7 +163,7 @@
             </div>
         </div>
 
-        <!-- Página Limites -->
+        <!-- ========== Página Limites - Configuração de Alertas ========== -->
         <div id='limites' class='page'>
             <h2>⚙️ Configuração de Limites</h2>
             <div class='limits-container'>
@@ -145,6 +173,8 @@
                     <p>Os limites definem quando os alertas visuais e sonoros serão ativados. Configure os valores mínimo e máximo para cada parâmetro.</p>
                     <p><strong>🔔 Alertas:</strong> LEDs RGB, buzzer e matriz de LED são ativados quando os valores saem da faixa configurada.</p>
                 </div>
+                
+                <!-- Seção Temperatura -->
                 <div class='limits-section'>
                     <div class='limits-title'>Temperatura</div>
                     <div class='limits-row'>
@@ -157,6 +187,8 @@
                         </div>
                     </div>
                 </div>
+                
+                <!-- Seção Umidade -->
                 <div class='limits-section'>
                     <div class='limits-title'>Umidade</div>
                     <div class='limits-row'>
@@ -169,6 +201,8 @@
                         </div>
                     </div>
                 </div>
+                
+                <!-- Seção Pressão -->
                 <div class='limits-section'>
                     <div class='limits-title'>Pressão</div>
                     <div class='limits-row'>
@@ -181,13 +215,16 @@
                         </div>
                     </div>
                 </div>
+                
                 <button>💾 Salvar Limites</button>
             </div>
         </div>
 
-        <!-- Página Calibração -->
+        <!-- ========== Página Calibração - Ajustes de Precisão ========== -->
         <div id='calibracao' class='page'>
             <h2>🔧 Calibração dos Sensores</h2>
+            
+            <!-- Valores Atuais -->
             <div class='current-values'>
                 <h3>Valores Atuais dos Sensores</h3>
                 <div class='sensor-grid'>
@@ -197,6 +234,8 @@
                     <div class='sensor-card'><div>Pressão</div><div class='sensor-value'>-- hPa</div></div>
                 </div>
             </div>
+            
+            <!-- Ajustes de Calibração -->
             <div class='calibration-container'>
                 <h3>Ajustes de Calibração (Offset)</h3>
                 <div class='calibration-help'>
@@ -204,6 +243,8 @@
                     <p>Use os campos abaixo para compensar variações dos sensores. Compare a leitura atual com um medidor de referência confiável e insira a diferença para corrigir.</p>
                     <p><strong>Exemplo:</strong> Se o sensor marca 24.5°C e o valor real é 25.0°C, insira <strong>+0.5</strong></p>
                 </div>
+                
+                <!-- Calibração Temperatura AHT20 -->
                 <div class='calibration-section'>
                     <div class='limits-title'>Temperatura AHT20</div>
                     <div class='limits-row'>
@@ -214,6 +255,8 @@
                         </div>
                     </div>
                 </div>
+                
+                <!-- Calibração Temperatura BMP280 -->
                 <div class='calibration-section'>
                     <div class='limits-title'>Temperatura BMP280</div>
                     <div class='limits-row'>
@@ -224,6 +267,8 @@
                         </div>
                     </div>
                 </div>
+                
+                <!-- Calibração Umidade -->
                 <div class='calibration-section'>
                     <div class='limits-title'>Umidade</div>
                     <div class='limits-row'>
@@ -234,6 +279,8 @@
                         </div>
                     </div>
                 </div>
+                
+                <!-- Calibração Pressão -->
                 <div class='calibration-section'>
                     <div class='limits-title'>Pressão</div>
                     <div class='limits-row'>
@@ -244,12 +291,15 @@
                         </div>
                     </div>
                 </div>
+                
                 <button>🔧 Salvar Calibrações</button>
             </div>
         </div>
     </div>
 
+    <!-- ========== JavaScript ========== -->
     <script>
+        // Função para alternar entre páginas da interface
         function mostrarPagina(pagina) {
             // Esconder todas as páginas
             document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));

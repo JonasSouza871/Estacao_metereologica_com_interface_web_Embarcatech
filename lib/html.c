@@ -1,7 +1,15 @@
+c
 #include "html.h"
 
+/* ---------- Páginas HTML do Sistema PicoAtmos ---------- */
+// Este arquivo contém todas as páginas web do sistema de monitoramento atmosférico
+// Cada página é definida como uma string constante contendo HTML, CSS e JavaScript
+
 /* ---- Página HTML Principal ------------------------------------ */
+// Página inicial com dashboard dos sensores e navegação principal
+// Atualiza automaticamente os valores dos sensores a cada 2 segundos
 const char HTML_BODY[] =
+
     "<!DOCTYPE html><html><head><meta charset='UTF-8'><title>PicoAtmos - Monitor Atmosférico</title>"
     "<meta name='viewport' content='width=device-width, initial-scale=1.0'>"
     "<style>"
