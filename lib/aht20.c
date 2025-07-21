@@ -3,12 +3,15 @@
 #include "hardware/i2c.h"
 #include "aht20.h"
 
+/* ---------- Constantes do Sensor AHT20 ---------- */
 #define AHT20_I2C_ADDR      0x38
 #define AHT20_CMD_INIT      0xBE
 #define AHT20_CMD_TRIGGER   0xAC
 #define AHT20_CMD_RESET     0xBA
 #define AHT20_STATUS_BUSY   0x80  // Bit de status ocupado
 #define AHT20_STATUS_CALIBRATED 0x08  // Bit de calibração
+
+/* ---------- Funções Públicas ---------- */
 
 bool aht20_init(i2c_inst_t *i2c) {
     uint8_t init_cmd[3] = {AHT20_CMD_INIT, 0x08, 0x00};
@@ -56,11 +59,15 @@ bool aht20_read(i2c_inst_t *i2c, AHT20_Data *data) {
     }
 
     // Processa os dados de umidade (20 bits)
-    uint32_t raw_humidity = ((uint32_t)buffer[1] << 12) | ((uint32_t)buffer[2] << 4) | (buffer[3] >> 4);
+    uint32_t raw_humidity = ((uint32_t)buffer[1] << 12) | 
+                           ((uint32_t)buffer[2] << 4) | 
+                           (buffer[3] >> 4);
     data->humidity = (float)raw_humidity * 100.0 / 1048576.0;
 
     // Processa os dados de temperatura (20 bits)
-    uint32_t raw_temp = ((uint32_t)(buffer[3] & 0x0F) << 16) | ((uint32_t)buffer[4] << 8) | buffer[5];
+    uint32_t raw_temp = ((uint32_t)(buffer[3] & 0x0F) << 16) | 
+                        ((uint32_t)buffer[4] << 8) | 
+                        buffer[5];
     data->temperature = ((float)raw_temp * 200.0 / 1048576.0) - 50.0;
 
     return true;
