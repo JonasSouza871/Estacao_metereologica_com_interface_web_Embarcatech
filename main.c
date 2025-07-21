@@ -63,8 +63,8 @@ float temperatura_limite_inferior = 20.0f;
 float temperatura_limite_superior = 30.0f;
 float umidade_limite_inferior = 40.0f;
 float umidade_limite_superior = 80.0f;
-float pressao_limite_inferior = 1000.0f;
-float pressao_limite_superior = 1030.0f;
+float pressao_limite_inferior = 900.0f;
+float pressao_limite_superior = 1100.0f;
 
 /* ---- Configurações de Offset (Calibração) -------------------- */
 float offset_temperatura_aht = 0.0f;
