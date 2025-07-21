@@ -2,97 +2,97 @@
 #include <string.h>
 #include <math.h>
 #include <stdlib.h>
-#include "pico/stdlib.h"        
-#include "pico/cyw43_arch.h"    // Biblioteca para WiFi do Pico W
-#include "lwipopts.h"           // Configurações da pilha TCP/IP
+#include "pico/stdlib.h"      
+#include "pico/cyw43_arch.h"   // Biblioteca para WiFi do Pico W
+#include "lwipopts.h"         // Configurações da pilha TCP/IP
 #include "lwipopts_examples_common.h"
-#include "hardware/i2c.h"       // Interface I2C para comunicação com sensores
+#include "hardware/i2c.h"     // Interface I2C para comunicação com sensores
 #include "hardware/gpio.h"      
-#include "hardware/adc.h"       // Conversor analógico-digital
-#include "hardware/irq.h"       // Sistema de interrupções
-#include "hardware/pwm.h"       // Modulação por largura de pulso (para buzzer)
-#include "lwip/tcp.h"          // Protocolo TCP para servidor web
+#include "hardware/adc.h"     // Conversor analógico-digital
+#include "hardware/irq.h"     // Sistema de interrupções
+#include "hardware/pwm.h"     // Modulação por largura de pulso (para buzzer)
+#include "lwip/tcp.h"         // Protocolo TCP para servidor web
 // Inclusões dos arquivos específicos do projeto
-#include "aht20.h"             // Driver do sensor de temperatura/umidade AHT20
-#include "bmp280.h"            // Driver do sensor de pressão/temperatura BMP280
-#include "ssd1306.h"           // Driver do display OLED
-#include "font.h"              // Fonte para exibição de texto
-#include "matriz_led.h"        // Controle da matriz de LEDs
-#include "html.h"              // Páginas web armazenadas em memória
+#include "aht20.h"            // Driver do sensor de temperatura/umidade AHT20
+#include "bmp280.h"           // Driver do sensor de pressão/temperatura BMP280
+#include "ssd1306.h"          // Driver do display OLED
+#include "font.h"             // Fonte para exibição de texto
+#include "matriz_led.h"       // Controle da matriz de LEDs
+#include "html.h"             // Páginas web armazenadas em memória
 
 /* =================== CONFIGURAÇÕES DE HARDWARE =================== */
 // Configuração do barramento I2C para os sensores (AHT20 e BMP280)
-#define I2C_SENSORES_PORT i2c0          // Usa o barramento I2C número 0
-#define I2C_SENSORES_SDA_PIN 0          // Pino de dados (SDA) do I2C dos sensores
-#define I2C_SENSORES_SCL_PIN 1          // Pino de clock (SCL) do I2C dos sensores
+#define I2C_SENSORES_PORT i2c0       // Usa o barramento I2C número 0
+#define I2C_SENSORES_SDA_PIN 0       // Pino de dados (SDA) do I2C dos sensores
+#define I2C_SENSORES_SCL_PIN 1       // Pino de clock (SCL) do I2C dos sensores
 
 // Configuração do barramento I2C para o display OLED
-#define I2C_DISPLAY_PORT i2c1           // Usa o barramento I2C número 1 (separado dos sensores)
-#define I2C_DISPLAY_SDA_PIN 14          // Pino de dados do display
-#define I2C_DISPLAY_SCL_PIN 15          // Pino de clock do display
-#define ENDERECO_DISPLAY 0x3C           // Endereço I2C do display (hexadecimal)
-#define LARGURA_DISPLAY 128             // Resolução horizontal do display em pixels
-#define ALTURA_DISPLAY 64               // Resolução vertical do display em pixels
+#define I2C_DISPLAY_PORT i2c1        // Usa o barramento I2C número 1 (separado dos sensores)
+#define I2C_DISPLAY_SDA_PIN 14       // Pino de dados do display
+#define I2C_DISPLAY_SCL_PIN 15       // Pino de clock do display
+#define ENDERECO_DISPLAY 0x3C        // Endereço I2C do display (hexadecimal)
+#define LARGURA_DISPLAY 128          // Resolução horizontal do display em pixels
+#define ALTURA_DISPLAY 64            // Resolução vertical do display em pixels
 
 // Configuração dos botões de navegação
-#define BOTAO_AVANCAR_PIN 5             // Botão para avançar telas (com pull-up interno)
-#define BOTAO_VOLTAR_PIN 6              // Botão para voltar telas (com pull-up interno)
+#define BOTAO_AVANCAR_PIN 5          // Botão para avançar telas (com pull-up interno)
+#define BOTAO_VOLTAR_PIN 6           // Botão para voltar telas (com pull-up interno)
 
 // Configuração do joystick analógico (usado para zoom nos gráficos)
-#define JOYSTICK_ZOOM_PIN 26            // Pino ADC do joystick (GPIO 26 = ADC0)
+#define JOYSTICK_ZOOM_PIN 26         // Pino ADC do joystick (GPIO 26 = ADC0)
 
 // Configuração dos componentes de alerta
-#define BUZZER_ALARME_PIN 10            // Pino PWM para controle do buzzer
-#define LED_VERDE_PIN 11                // LED verde do sistema RGB
-#define LED_AZUL_PIN 12                 // LED azul do sistema RGB  
-#define LED_VERMELHO_PIN 13             // LED vermelho do sistema RGB
+#define BUZZER_ALARME_PIN 10         // Pino PWM para controle do buzzer
+#define LED_VERDE_PIN 11             // LED verde do sistema RGB
+#define LED_AZUL_PIN 12              // LED azul do sistema RGB  
+#define LED_VERMELHO_PIN 13          // LED vermelho do sistema RGB
 
 /* =================== CONFIGURAÇÕES DE REDE =================== */
-#define NOME_WIFI "Jonas Souza"         // Nome da rede WiFi para conexão
-#define SENHA_WIFI "12345678"           // Senha da rede WiFi
+#define NOME_WIFI "Jonas Souza"      // Nome da rede WiFi para conexão
+#define SENHA_WIFI "12345678"        // Senha da rede WiFi
 
 /* =================== DEFINIÇÕES DAS TELAS DO SISTEMA =================== */
 // Enumera todas as telas disponíveis no sistema de navegação
-#define TELA_INICIAL 0                  // Tela de boas-vindas/abertura
-#define TELA_DADOS_SENSORES 1           // Mostra valores atuais dos sensores
-#define TELA_STATUS_REDE 2              // Status de conectividade e sistema
-#define TELA_GRAFICO_TEMP 3             // Gráfico da temperatura ao longo do tempo
-#define TELA_GRAFICO_UMIDADE 4          // Gráfico da umidade ao longo do tempo
-#define TELA_GRAFICO_PRESSAO 5          // Gráfico da pressão ao longo do tempo
-#define TELA_STATUS_LEDS 6              // Status atual dos LEDs indicadores
-#define TOTAL_TELAS 7                   // Número total de telas disponíveis
+#define TELA_INICIAL 0               // Tela de boas-vindas/abertura
+#define TELA_DADOS_SENSORES 1        // Mostra valores atuais dos sensores
+#define TELA_STATUS_REDE 2           // Status de conectividade e sistema
+#define TELA_GRAFICO_TEMP 3          // Gráfico da temperatura ao longo do tempo
+#define TELA_GRAFICO_UMIDADE 4       // Gráfico da umidade ao longo do tempo
+#define TELA_GRAFICO_PRESSAO 5       // Gráfico da pressão ao longo do tempo
+#define TELA_STATUS_LEDS 6           // Status atual dos LEDs indicadores
+#define TOTAL_TELAS 7                // Número total de telas disponíveis
 
 /* =================== CONFIGURAÇÕES DE TEMPORIZAÇÃO =================== */
-#define TEMPO_DEBOUNCE_MS 250           // Tempo para evitar múltiplos cliques dos botões (ms)
-#define INTERVALO_LEITURA_MS 2000       // Intervalo entre leituras dos sensores (2 segundos)
-#define TAMANHO_BUFFER_GRAFICO 30       // Quantos pontos são armazenados para cada gráfico
-#define TAMANHO_HISTORICO_WEB 100       // Quantos pontos ficam disponíveis via web
-#define TEMPO_DEBOUNCE_ZOOM_MS 120      // Tempo de debounce para o joystick de zoom
+#define TEMPO_DEBOUNCE_MS 250        // Tempo para evitar múltiplos cliques dos botões (ms)
+#define INTERVALO_LEITURA_MS 2000    // Intervalo entre leituras dos sensores (2 segundos)
+#define TAMANHO_BUFFER_GRAFICO 30    // Quantos pontos são armazenados para cada gráfico
+#define TAMANHO_HISTORICO_WEB 100    // Quantos pontos ficam disponíveis via web
+#define TEMPO_DEBOUNCE_ZOOM_MS 120   // Tempo de debounce para o joystick de zoom
 
 /* =================== LIMITES DE MONITORAMENTO =================== */
 // Estes valores definem quando o sistema deve gerar alertas
 // Podem ser alterados via interface web
-float limite_temp_min = 20.0f;         // Temperatura mínima aceitável (°C)
-float limite_temp_max = 30.0f;         // Temperatura máxima aceitável (°C)
-float limite_umid_min = 40.0f;         // Umidade mínima aceitável (%)
-float limite_umid_max = 80.0f;         // Umidade máxima aceitável (%)
-float limite_press_min = 900.0f;       // Pressão mínima aceitável (hPa)
-float limite_press_max = 1000.0f;      // Pressão máxima aceitável (hPa)
+float limite_temp_min = 20.0f;       // Temperatura mínima aceitável (°C)
+float limite_temp_max = 30.0f;       // Temperatura máxima aceitável (°C)
+float limite_umid_min = 40.0f;       // Umidade mínima aceitável (%)
+float limite_umid_max = 80.0f;       // Umidade máxima aceitável (%)
+float limite_press_min = 900.0f;     // Pressão mínima aceitável (hPa)
+float limite_press_max = 1000.0f;    // Pressão máxima aceitável (hPa)
 
 /* =================== CALIBRAÇÃO DOS SENSORES =================== */
 // Valores de ajuste para corrigir erros sistemáticos dos sensores
 // Podem ser configurados via interface web para melhorar a precisão
-float ajuste_temp_aht = 0.0f;          // Ajuste para temperatura do sensor AHT20
-float ajuste_temp_bmp = 0.0f;          // Ajuste para temperatura do sensor BMP280
-float ajuste_umidade = 0.0f;           // Ajuste para umidade do AHT20
-float ajuste_pressao = 0.0f;           // Ajuste para pressão do BMP280
+float ajuste_temp_aht = 0.0f;        // Ajuste para temperatura do sensor AHT20
+float ajuste_temp_bmp = 0.0f;        // Ajuste para temperatura do sensor BMP280
+float ajuste_umidade = 0.0f;         // Ajuste para umidade do AHT20
+float ajuste_pressao = 0.0f;         // Ajuste para pressão do BMP280
 
 /* =================== VARIÁVEIS DE CONTROLE DO SISTEMA =================== */
-bool wifi_conectado = false;           // Flag indicando se WiFi está conectado
+bool wifi_conectado = false;         // Flag indicando se WiFi está conectado
 char endereco_ip[24] = "Desconectado"; // String com o IP atual ou status de erro
 
 // Controle da interface do usuário
-volatile uint8_t tela_ativa = TELA_INICIAL;        // Qual tela está sendo exibida atualmente
+volatile uint8_t tela_ativa = TELA_INICIAL;       // Qual tela está sendo exibida atualmente
 volatile bool flag_atualizar_display = true;      // Sinaliza quando o display precisa ser atualizado
 volatile float fator_zoom_temp = 1.0f;            // Nível de zoom do gráfico de temperatura
 volatile float fator_zoom_umid = 1.0f;            // Nível de zoom do gráfico de umidade  
@@ -168,7 +168,6 @@ void processar_alertas_sonoros(EstadoSistema);
 void definir_frequencia_buzzer(uint, float);
 
 /* =================== FUNÇÕES DO SERVIDOR WEB =================== */
-
 // Função chamada quando dados são enviados com sucesso via TCP
 // Serve para controlar o progresso do envio e fechar a conexão quando terminar
 static err_t callback_envio_http(void *arg, struct tcp_pcb *tpcb, u16_t len) {
@@ -177,8 +176,8 @@ static err_t callback_envio_http(void *arg, struct tcp_pcb *tpcb, u16_t len) {
     
     // Se enviou tudo, fecha a conexão e libera memória
     if (hs->enviado >= hs->tamanho) {
-        tcp_close(tpcb);    // Fecha conexão TCP
-        free(hs);           // Libera memória alocada para esta conexão
+        tcp_close(tpcb);   // Fecha conexão TCP
+        free(hs);          // Libera memória alocada para esta conexão
     }
     return ERR_OK; // Retorna sucesso
 }
@@ -220,12 +219,12 @@ static err_t callback_recepcao_http(void *arg, struct tcp_pcb *tpcb, struct pbuf
             
         // Monta cabeçalho HTTP + JSON
         hs->tamanho = snprintf(hs->resposta, sizeof(hs->resposta),
-            "HTTP/1.1 200 OK\r\n"                    // Status de sucesso
-            "Content-Type: application/json\r\n"      // Tipo de conteúdo
-            "Content-Length: %d\r\n"                  // Tamanho do conteúdo
-            "Connection: close\r\n"                   // Fecha conexão após envio
-            "\r\n"                                    // Linha em branco (fim do cabeçalho)
-            "%s", tam_json, payload_json);            // Conteúdo JSON
+            "HTTP/1.1 200 OK\r\n"                  // Status de sucesso
+            "Content-Type: application/json\r\n"   // Tipo de conteúdo
+            "Content-Length: %d\r\n"               // Tamanho do conteúdo
+            "Connection: close\r\n"                // Fecha conexão após envio
+            "\r\n"                                 // Linha em branco (fim do cabeçalho)
+            "%s", tam_json, payload_json);         // Conteúdo JSON
     }
     else if (strstr(requisicao, "GET /set_limits")) {
         // Endpoint para configurar novos limites de alerta via web
@@ -233,12 +232,10 @@ static err_t callback_recepcao_http(void *arg, struct tcp_pcb *tpcb, struct pbuf
         float temp_min, temp_max, umid_min, umid_max, press_min, press_max;
         sscanf(requisicao, "GET /set_limits?temp_min=%f&temp_max=%f&umid_min=%f&umid_max=%f&press_min=%f&press_max=%f",
             &temp_min, &temp_max, &umid_min, &umid_max, &press_min, &press_max);
-            
         // Atualiza variáveis globais com novos limites
         limite_temp_min = temp_min; limite_temp_max = temp_max;
         limite_umid_min = umid_min; limite_umid_max = umid_max;
-        limite_press_min = press_min; limite_press_max = press_max;
-        
+        limite_press_min = press_min; limite_press_max = press_max;    
         // Resposta simples confirmando alteração
         const char *resposta = "Limites atualizados";
         hs->tamanho = snprintf(hs->resposta, sizeof(hs->resposta),
@@ -292,11 +289,11 @@ static err_t callback_recepcao_http(void *arg, struct tcp_pcb *tpcb, struct pbuf
     }
     
     // Configura callbacks e envia resposta
-    tcp_arg(tpcb, hs);                    // Associa estado da conexão ao PCB
-    tcp_sent(tpcb, callback_envio_http);  // Define callback para confirmação de envio
+    tcp_arg(tpcb, hs);                       // Associa estado da conexão ao PCB
+    tcp_sent(tpcb, callback_envio_http);     // Define callback para confirmação de envio
     tcp_write(tpcb, hs->resposta, hs->tamanho, TCP_WRITE_FLAG_COPY); // Envia dados
-    tcp_output(tpcb);                     // Força envio imediato
-    pbuf_free(p);                         // Libera buffer da requisição recebida
+    tcp_output(tpcb);                        // Força envio imediato
+    pbuf_free(p);                            // Libera buffer da requisição recebida
     return ERR_OK;
 }
 
@@ -308,26 +305,24 @@ static err_t callback_nova_conexao(void *arg, struct tcp_pcb *newpcb, err_t err)
 }
 
 // Inicializa o servidor web na porta 80
-static void iniciar_servidor_web(void) {
+// CORREÇÃO: Removido 'static' para corresponder ao protótipo da função.
+void iniciar_servidor_web(void) {
     struct tcp_pcb *pcb = tcp_new(); // Cria novo PCB (Protocol Control Block)
     if (!pcb) { 
         printf("Erro ao criar PCB TCP\n"); 
         return; 
     }
-    
     // Associa servidor à porta 80 (HTTP padrão)
     if (tcp_bind(pcb, IP_ADDR_ANY, 80) != ERR_OK) { 
         printf("Erro ao vincular porta 80\n"); 
         return; 
     }
-    
-    pcb = tcp_listen(pcb);                          // Coloca servidor em modo de escuta
-    tcp_accept(pcb, callback_nova_conexao);         // Define callback para novas conexões
+    pcb = tcp_listen(pcb);                       // Coloca servidor em modo de escuta
+    tcp_accept(pcb, callback_nova_conexao);      // Define callback para novas conexões
     printf("Servidor HTTP ativo na porta 80\n");
 }
 
 /* =================== FUNÇÕES DE LÓGICA DE ESTADOS =================== */
-
 // Analisa valores atuais dos sensores e determina o estado do sistema
 // Esta função implementa a lógica de decisão para alertas
 EstadoSistema verificar_estado_atual(void) {
@@ -337,15 +332,12 @@ EstadoSistema verificar_estado_atual(void) {
     // Temperatura tem prioridade sobre outros parâmetros
     if (temp_media > limite_temp_max) return ESTADO_TEMP_ALTA;
     if (temp_media < limite_temp_min) return ESTADO_TEMP_BAIXA;
-    
     // Depois verifica umidade
     if (umidade_atual > limite_umid_max) return ESTADO_UMID_ALTA;
     if (umidade_atual < limite_umid_min) return ESTADO_UMID_BAIXA;
-    
     // Por último verifica pressão
     if (pressao_hpa > limite_press_max) return ESTADO_PRESS_ALTA;
     if (pressao_hpa < limite_press_min) return ESTADO_PRESS_BAIXA;
-    
     // Se chegou aqui, todos os valores estão dentro dos limites
     return ESTADO_NORMAL;
 }
@@ -354,13 +346,13 @@ EstadoSistema verificar_estado_atual(void) {
 // Usado para exibir no display qual cor está ativa
 const char* obter_cor_estado_texto(EstadoSistema estado) {
     switch (estado) {
-        case ESTADO_NORMAL:       return "Verde";        // Tudo OK = Verde
-        case ESTADO_TEMP_ALTA:    return "Vermelho";     // Temperatura alta = Vermelho (quente)
-        case ESTADO_TEMP_BAIXA:   return "Azul";         // Temperatura baixa = Azul (frio)
-        case ESTADO_UMID_ALTA:    return "Roxo";         // Umidade alta = Roxo (combinação azul+vermelho)
-        case ESTADO_UMID_BAIXA:   return "Amarelo";      // Umidade baixa = Amarelo (combinação verde+vermelho)
-        case ESTADO_PRESS_ALTA:   return "Branco";       // Pressão alta = Branco (todos LEDs)
-        case ESTADO_PRESS_BAIXA:  return "Desligado";    // Pressão baixa = LEDs apagados
+        case ESTADO_NORMAL:       return "Verde";      // Tudo OK = Verde
+        case ESTADO_TEMP_ALTA:    return "Vermelho";   // Temperatura alta = Vermelho (quente)
+        case ESTADO_TEMP_BAIXA:   return "Azul";       // Temperatura baixa = Azul (frio)
+        case ESTADO_UMID_ALTA:    return "Roxo";       // Umidade alta = Roxo (combinação azul+vermelho)
+        case ESTADO_UMID_BAIXA:   return "Amarelo";    // Umidade baixa = Amarelo (combinação verde+vermelho)
+        case ESTADO_PRESS_ALTA:   return "Branco";     // Pressão alta = Branco (todos LEDs)
+        case ESTADO_PRESS_BAIXA:  return "Desligado";  // Pressão baixa = LEDs apagados
         default:                  return "Indefinido";
     }
 }
@@ -369,19 +361,18 @@ const char* obter_cor_estado_texto(EstadoSistema estado) {
 // Cada estado tem uma animação visual característica
 const char* obter_animacao_estado_texto(EstadoSistema estado) {
     switch (estado) {
-        case ESTADO_NORMAL:       return "Quadrado";         // Forma estável
-        case ESTADO_TEMP_ALTA:    return "Alerta (!)";       // Símbolo de atenção
-        case ESTADO_TEMP_BAIXA:   return "Chuva";            // Animação de gotas caindo
-        case ESTADO_UMID_ALTA:    return "Chuva";            // Também usa chuva (muita água)
-        case ESTADO_UMID_BAIXA:   return "Alerta (!)";       // Alerta para secura
-        case ESTADO_PRESS_ALTA:   return "Quadrado";         // Forma sólida (alta pressão)
-        case ESTADO_PRESS_BAIXA:  return "Erro (X)";         // X indica problema
+        case ESTADO_NORMAL:       return "Quadrado";       // Forma estável
+        case ESTADO_TEMP_ALTA:    return "Alerta (!)";     // Símbolo de atenção
+        case ESTADO_TEMP_BAIXA:   return "Chuva";          // Animação de gotas caindo
+        case ESTADO_UMID_ALTA:    return "Chuva";          // Também usa chuva (muita água)
+        case ESTADO_UMID_BAIXA:   return "Alerta (!)";     // Alerta para secura
+        case ESTADO_PRESS_ALTA:   return "Quadrado";       // Forma sólida (alta pressão)
+        case ESTADO_PRESS_BAIXA:  return "Erro (X)";       // X indica problema
         default:                  return "Nenhuma";
     }
 }
 
 /* =================== CONTROLE DE ALERTAS VISUAIS E SONOROS =================== */
-
 // Atualiza os LEDs RGB baseado no estado atual do sistema
 // Cada estado tem uma combinação específica de cores
 void atualizar_indicadores_led(EstadoSistema estado) {
@@ -422,14 +413,14 @@ void atualizar_indicadores_led(EstadoSistema estado) {
 // Configura frequência do buzzer através do módulo PWM
 // Calcula divisores e períodos necessários para gerar a frequência desejada
 void definir_frequencia_buzzer(uint slice_num, float freq) {
-    uint32_t clock = 125000000;        // Clock do sistema = 125MHz
+    uint32_t clock = 125000000;      // Clock do sistema = 125MHz
     uint32_t f_int = (uint32_t)freq;   // Frequência desejada convertida para inteiro
     if (f_int == 0) return;            // Se frequência é zero, não faz nada
     
     // Cálcula divisor necessário para atingir a frequência
     // Formula complexa para trabalhar com limitações do hardware PWM
     uint32_t divisor16 = clock / f_int / 4096 + (clock % (f_int * 4096) != 0);
-    if (divisor16 / 16 == 0) divisor16 = 16;    // Valor mínimo
+    if (divisor16 / 16 == 0) divisor16 = 16;     // Valor mínimo
     uint32_t wrap = (uint32_t)(clock * 16.0f / divisor16 / freq) - 1;
     
     // Configura módulo PWM com valores calculados
@@ -442,7 +433,7 @@ void definir_frequencia_buzzer(uint slice_num, float freq) {
 // Valores altos geram sons agudos e rápidos, valores baixos geram sons graves e lentos
 void processar_alertas_sonoros(EstadoSistema estado) {
     static EstadoSistema estado_anterior = ESTADO_NORMAL;  // Lembra estado anterior
-    static uint64_t proximo_som_ms = 0;                   // Quando tocar próximo som
+    static uint64_t proximo_som_ms = 0;                    // Quando tocar próximo som
     static int sequencia_atual = 0;                       // Posição na sequência de sons
     
     uint slice_num = pwm_gpio_to_slice_num(BUZZER_ALARME_PIN); // Identifica slice PWM do buzzer
@@ -460,10 +451,8 @@ void processar_alertas_sonoros(EstadoSistema estado) {
         pwm_set_enabled(slice_num, false); 
         return; 
     }
-
     uint64_t agora_ms = to_ms_since_boot(get_absolute_time());
     if (agora_ms < proximo_som_ms) return; // Ainda não é hora de alterar o som
-
     // Determina se o problema é "valor acima do limite" ou "valor abaixo do limite"
     bool valores_acima = (estado == ESTADO_TEMP_ALTA || estado == ESTADO_UMID_ALTA || estado == ESTADO_PRESS_ALTA);
     
@@ -498,9 +487,9 @@ int main() {
     sleep_ms(2000); // Aguarda 2 segundos para estabilizar
     
     // Declara estruturas principais do sistema
-    ssd1306_t display;                        // Estrutura para controle do display OLED
-    struct bmp280_calib_param params_bmp;     // Parâmetros de calibração do sensor BMP280
-    uint64_t proxima_coleta = 0;              // Timestamp da próxima leitura dos sensores
+    ssd1306_t display;                   // Estrutura para controle do display OLED
+    struct bmp280_calib_param params_bmp;    // Parâmetros de calibração do sensor BMP280
+    uint64_t proxima_coleta = 0;           // Timestamp da próxima leitura dos sensores
     
     // Inicializa todos os periféricos do sistema
     inicializar_hardware_completo(&display, &params_bmp);
@@ -540,14 +529,12 @@ int main() {
             // Analisa estado atual e atualiza indicadores
             estado_atual = verificar_estado_atual();
             atualizar_indicadores_led(estado_atual);
-            
             // Se está em tela que mostra dados, marca para atualizar display
             if (tela_ativa >= TELA_DADOS_SENSORES) flag_atualizar_display = true;
         }
         
         // Atualiza matriz de LEDs com animação baseada no estado
         atualizar_matriz_pelo_estado(estado_atual);
-        
         // Processa alertas sonoros
         processar_alertas_sonoros(estado_atual);
         
@@ -559,14 +546,12 @@ int main() {
         
         // Processa joystick para zoom nos gráficos
         processar_movimento_joystick();
-        
         sleep_ms(10); // Pausa curta para não sobrecarregar CPU
     }
     return 0; // Nunca deveria chegar aqui
 }
 
 /* =================== INICIALIZAÇÃO DO HARDWARE =================== */
-
 // Inicializa todos os periféricos necessários
 void inicializar_hardware_completo(ssd1306_t *display, struct bmp280_calib_param *params) {
     // Configura barramento I2C para sensores (velocidade 100kHz)
@@ -575,36 +560,31 @@ void inicializar_hardware_completo(ssd1306_t *display, struct bmp280_calib_param
     gpio_set_function(I2C_SENSORES_SCL_PIN, GPIO_FUNC_I2C); // Configura pino como SCL
     gpio_pull_up(I2C_SENSORES_SDA_PIN);                     // Ativa resistor pull-up interno
     gpio_pull_up(I2C_SENSORES_SCL_PIN);                     // Pull-up necessário para I2C
-    
     // Configura barramento I2C para display (velocidade 400kHz - mais rápido)
     i2c_init(I2C_DISPLAY_PORT, 400 * 1000);
     gpio_set_function(I2C_DISPLAY_SDA_PIN, GPIO_FUNC_I2C);
     gpio_set_function(I2C_DISPLAY_SCL_PIN, GPIO_FUNC_I2C);
     gpio_pull_up(I2C_DISPLAY_SDA_PIN);
     gpio_pull_up(I2C_DISPLAY_SCL_PIN);
-    
     // Inicializa display OLED (SSD1306)
     ssd1306_init(display, LARGURA_DISPLAY, ALTURA_DISPLAY, false, ENDERECO_DISPLAY, I2C_DISPLAY_PORT);
     ssd1306_config(display); // Aplica configurações padrão
-    
     // Inicializa sensores
-    aht20_init(I2C_SENSORES_PORT);                    // Inicializa sensor temperatura/umidade
-    bmp280_init(I2C_SENSORES_PORT);                   // Inicializa sensor pressão/temperatura
+    aht20_init(I2C_SENSORES_PORT);                 // Inicializa sensor temperatura/umidade
+    bmp280_init(I2C_SENSORES_PORT);                // Inicializa sensor pressão/temperatura
     bmp280_get_calib_params(I2C_SENSORES_PORT, params); // Lê parâmetros de calibração do BMP280
 }
 
 // Configura botões com interrupções para navegação
 void configurar_botoes_navegacao(void) {
     // Configura botão de avançar
-    gpio_init(BOTAO_AVANCAR_PIN);                      // Inicializa pino
-    gpio_set_dir(BOTAO_AVANCAR_PIN, GPIO_IN);         // Define como entrada
-    gpio_pull_up(BOTAO_AVANCAR_PIN);                  // Ativa pull-up (botão conecta ao GND)
-    
+    gpio_init(BOTAO_AVANCAR_PIN);                 // Inicializa pino
+    gpio_set_dir(BOTAO_AVANCAR_PIN, GPIO_IN);     // Define como entrada
+    gpio_pull_up(BOTAO_AVANCAR_PIN);              // Ativa pull-up (botão conecta ao GND)
     // Configura botão de voltar
     gpio_init(BOTAO_VOLTAR_PIN);
     gpio_set_dir(BOTAO_VOLTAR_PIN, GPIO_IN);
     gpio_pull_up(BOTAO_VOLTAR_PIN);
-    
     // Configura interrupções para detectar pressionamento (borda descendente)
     gpio_set_irq_enabled_with_callback(BOTAO_AVANCAR_PIN, GPIO_IRQ_EDGE_FALL, true, &processar_botoes_pressionados);
     gpio_set_irq_enabled_with_callback(BOTAO_VOLTAR_PIN, GPIO_IRQ_EDGE_FALL, true, &processar_botoes_pressionados);
@@ -612,9 +592,9 @@ void configurar_botoes_navegacao(void) {
 
 // Configura ADC para leitura do joystick analógico
 void configurar_joystick_zoom(void) {
-    adc_init();                    // Inicializa módulo ADC
+    adc_init();                       // Inicializa módulo ADC
     adc_gpio_init(JOYSTICK_ZOOM_PIN); // Configura pino como entrada ADC
-    adc_select_input(0);           // Seleciona canal ADC 0 (GPIO 26)
+    adc_select_input(0);              // Seleciona canal ADC 0 (GPIO 26)
 }
 
 // Configura LEDs RGB como saídas digitais
@@ -623,12 +603,10 @@ void configurar_leds_status(void) {
     gpio_init(LED_VERDE_PIN);
     gpio_set_dir(LED_VERDE_PIN, GPIO_OUT); // Define como saída
     gpio_put(LED_VERDE_PIN, 0);            // Inicia apagado
-    
     // LED Azul  
     gpio_init(LED_AZUL_PIN);
     gpio_set_dir(LED_AZUL_PIN, GPIO_OUT);
     gpio_put(LED_AZUL_PIN, 0);
-    
     // LED Vermelho
     gpio_init(LED_VERMELHO_PIN);
     gpio_set_dir(LED_VERMELHO_PIN, GPIO_OUT);
@@ -660,10 +638,8 @@ void inicializar_conexao_wifi(ssd1306_t *display) {
         strcpy(endereco_ip, "Erro Init");
         return;
     }
-    
     // Habilita modo estação (cliente WiFi)
     cyw43_arch_enable_sta_mode();
-    
     // Tenta conectar na rede (timeout de 10 segundos)
     if (cyw43_arch_wifi_connect_timeout_ms(NOME_WIFI, SENHA_WIFI, CYW43_AUTH_WPA2_AES_PSK, 10000)) {
         // Falhou na conexão
@@ -691,7 +667,6 @@ void inicializar_conexao_wifi(ssd1306_t *display) {
 }
 
 /* =================== CALLBACKS DE INTERRUPÇÃO =================== */
-
 // Função chamada quando botões são pressionados (via interrupção)
 // Implementa debounce por software para evitar múltiplos cliques
 void processar_botoes_pressionados(uint gpio, uint32_t eventos) {
@@ -732,8 +707,9 @@ void processar_movimento_joystick(void) {
     bool mudou_zoom = false;
     
     // Determina qual variável de zoom alterar baseado na tela ativa
-    float *fator_zoom_atual = (tela_ativa == TELA_GRAFICO_TEMP) ? &fator_zoom_temp : 
-                              (tela_ativa == TELA_GRAFICO_UMIDADE) ? &fator_zoom_umid : &fator_zoom_press;
+    // CORREÇÃO: O ponteiro agora é 'volatile float *' para corresponder ao tipo das variáveis de zoom.
+    volatile float *fator_zoom_atual = (tela_ativa == TELA_GRAFICO_TEMP) ? &fator_zoom_temp : 
+                                     (tela_ativa == TELA_GRAFICO_UMIDADE) ? &fator_zoom_umid : &fator_zoom_press;
     
     // Verifica direção do joystick e altera zoom
     if (valor_adc > ZONA_MORTA_MAX && *fator_zoom_atual < 4.0f) {
@@ -746,7 +722,6 @@ void processar_movimento_joystick(void) {
         *fator_zoom_atual -= 0.10f;
         mudou_zoom = true;
     }
-    
     // Se houve mudança, atualiza display
     if (mudou_zoom) {
         ultimo_zoom_ms = agora;
@@ -755,16 +730,13 @@ void processar_movimento_joystick(void) {
 }
 
 /* =================== FUNÇÕES DE EXIBIÇÃO =================== */
-
 // Desenha tela inicial/de boas-vindas
 void exibir_tela_inicial(ssd1306_t *display) {
-    ssd1306_fill(display, 0);                    // Limpa tela (preenche com preto)
+    ssd1306_fill(display, 0);                   // Limpa tela (preenche com preto)
     ssd1306_rect(display, 5, 5, 118, 54, 1, false); // Desenha retângulo de borda
-    
     // Centraliza título na tela
     const char *titulo = "PicoAtmos";
     ssd1306_draw_string(display, titulo, (LARGURA_DISPLAY - strlen(titulo) * 8) / 2, 28, false);
-    
     // Centraliza subtítulo
     const char *subtitulo = "Sistema Ativo";
     ssd1306_draw_string(display, subtitulo, (LARGURA_DISPLAY - strlen(subtitulo) * 6) / 2, 45, true);
@@ -775,30 +747,23 @@ void exibir_tela_inicial(ssd1306_t *display) {
 // Exibe valores atuais de todos os sensores
 void exibir_dados_sensores(ssd1306_t *display, float t_aht, float t_bmp, float t_med, float umid, float press) {
     ssd1306_fill(display, 0);
-    
     // Cabeçalho centralizado
     const char *titulo = "Dados Coletados";
     ssd1306_draw_string(display, titulo, (LARGURA_DISPLAY - strlen(titulo) * 8) / 2, 0, false);
-    
     // Buffer para formatação de strings
     char buffer[32];
-    
     // Temperatura do AHT20
     snprintf(buffer, sizeof(buffer), "AHT20: %.1fC", t_aht);
     ssd1306_draw_string(display, buffer, 0, 12, false);
-    
     // Temperatura do BMP280  
     snprintf(buffer, sizeof(buffer), "BMP280:%.1fC", t_bmp);
     ssd1306_draw_string(display, buffer, 0, 22, false);
-    
     // Temperatura média
     snprintf(buffer, sizeof(buffer), "Media: %.1fC", t_med);
     ssd1306_draw_string(display, buffer, 0, 32, false);
-    
     // Umidade
     snprintf(buffer, sizeof(buffer), "Umidade:%.1f%%", umid);
     ssd1306_draw_string(display, buffer, 0, 42, false);
-    
     // Pressão (convertida de Pa para hPa)
     snprintf(buffer, sizeof(buffer), "Press:%.1fhPa", press / 100.0);
     ssd1306_draw_string(display, buffer, 0, 52, false);
@@ -809,59 +774,45 @@ void exibir_dados_sensores(ssd1306_t *display, float t_aht, float t_bmp, float t
 // Exibe status da rede e sistema
 void exibir_status_conexao(ssd1306_t *display) {
     ssd1306_fill(display, 0);
-    
     const char *titulo = "Status Sistema";
     ssd1306_draw_string(display, titulo, (LARGURA_DISPLAY - strlen(titulo) * 8) / 2, 0, false);
-    
     char buffer[32];
-    
     // Endereço IP atual
     snprintf(buffer, sizeof(buffer), "IP:%s", endereco_ip);
     ssd1306_draw_string(display, buffer, 0, 12, false);
-    
     // Status WiFi
     snprintf(buffer, sizeof(buffer), "WiFi:%s", wifi_conectado ? "OK" : "FALHA");
     ssd1306_draw_string(display, buffer, 0, 22, false);
-    
     // Analisa e exibe status de cada parâmetro
     const char *status_temp = (temp_media < limite_temp_min) ? "Baixa" : 
                               (temp_media > limite_temp_max) ? "Alta" : "OK";
     snprintf(buffer, sizeof(buffer), "Temp:%s", status_temp);
     ssd1306_draw_string(display, buffer, 0, 32, false);
-    
     const char *status_umid = (umidade_atual < limite_umid_min) ? "Baixa" : 
                               (umidade_atual > limite_umid_max) ? "Alta" : "OK";
     snprintf(buffer, sizeof(buffer), "Umid:%s", status_umid);
     ssd1306_draw_string(display, buffer, 0, 42, false);
-    
     float pressao_hpa = pressao_atual / 100.0f;
     const char *status_press = (pressao_hpa < limite_press_min) ? "Baixa" : 
                                (pressao_hpa > limite_press_max) ? "Alta" : "OK";
     snprintf(buffer, sizeof(buffer), "Press:%s", status_press);
     ssd1306_draw_string(display, buffer, 0, 52, false);
-    
     ssd1306_send_data(display);
 }
 
 // Exibe status atual do LED RGB
 void exibir_status_led_rgb(ssd1306_t *display) {
     ssd1306_fill(display, 0);
-    
     const char *titulo = "Indicador LED";
     ssd1306_draw_string(display, titulo, (LARGURA_DISPLAY - strlen(titulo) * 8) / 2, 0, false);
-    
     ssd1306_hline(display, 0, LARGURA_DISPLAY, 12, true); // Linha separadora
-    
     // Obtém descrição da cor atual
     const char *cor_ativa = obter_cor_estado_texto(estado_atual);
-    
     char buffer[32];
     snprintf(buffer, sizeof(buffer), "Cor Ativa:");
     ssd1306_draw_string(display, buffer, 10, 25, false);
-    
     // Centraliza nome da cor
     ssd1306_draw_string(display, cor_ativa, (LARGURA_DISPLAY - strlen(cor_ativa) * 8) / 2, 40, false);
-    
     ssd1306_send_data(display);
 }
 
@@ -869,13 +820,10 @@ void exibir_status_led_rgb(ssd1306_t *display) {
 // Recebe array de dados, fator de zoom e unidade de medida
 void desenhar_grafico_base(ssd1306_t *display, const char *titulo, float *buffer_dados, float fator_zoom, const char *unidade) {
     ssd1306_fill(display, 0);
-    
     // Define área do gráfico na tela
     const uint8_t area_x = 20, area_y = 52, altura = 40, largura = 105;
-    
     // Título centralizado
     ssd1306_draw_string(display, titulo, (LARGURA_DISPLAY - strlen(titulo) * 8) / 2, 0, false);
-    
     // Se não há dados ainda, mostra mensagem
     if (contador_amostras == 0) {
         ssd1306_draw_string(display, "Sem dados...", 8, 30, false);
@@ -916,21 +864,17 @@ void desenhar_grafico_base(ssd1306_t *display, const char *titulo, float *buffer
     for (int i = 0; i <= 3; i++) {
         float valor_marca = y_min + (i * faixa_zoom / 3.0f);
         uint8_t y_pos = area_y - (i * altura / 3);
-        
         // Desenha tick mark
         ssd1306_hline(display, area_x - 2, area_x, y_pos, true);
-        
         // Label numérico
         char marca[8];
         snprintf(marca, sizeof(marca), "%.0f", valor_marca);
         ssd1306_draw_string(display, marca, 0, y_pos - 4, false);
     }
-    
     // Marcações no eixo X (tempo: 0, 30s, 60s)
     ssd1306_vline(display, area_x, area_y, area_y + 2, true);
     ssd1306_vline(display, area_x + largura/2, area_y, area_y + 2, true);
     ssd1306_vline(display, area_x + largura, area_y, area_y + 2, true);
-    
     ssd1306_draw_string(display, "0", area_x - 3, area_y + 5, false);
     ssd1306_draw_string(display, "30s", area_x + largura/2 - 10, area_y + 5, false);
     ssd1306_draw_string(display, "60s", area_x + largura - 18, area_y + 5, false);
@@ -962,11 +906,9 @@ void desenhar_grafico_base(ssd1306_t *display, const char *titulo, float *buffer
 void exibir_grafico_temperatura(ssd1306_t *display) {
     desenhar_grafico_base(display, "Temperatura", historico_temp, fator_zoom_temp, "C");
 }
-
 void exibir_grafico_umidade(ssd1306_t *display) {
     desenhar_grafico_base(display, "Umidade", historico_umid, fator_zoom_umid, "%");
 }
-
 void exibir_grafico_pressao(ssd1306_t *display) {
     desenhar_grafico_base(display, "Pressao", historico_press, fator_zoom_press, "hPa");
 }
@@ -986,7 +928,6 @@ void atualizar_display_principal(ssd1306_t *display, float t_aht, float t_bmp, f
 }
 
 /* =================== COLETA DE DADOS DOS SENSORES =================== */
-
 // Lê dados de todos os sensores e aplica calibrações
 void coletar_dados_todos_sensores(struct bmp280_calib_param *params, float *t_aht, float *t_bmp, float *t_med, float *umid, float *press) {
     // Lê sensor AHT20 (temperatura + umidade)
@@ -1004,8 +945,8 @@ void coletar_dados_todos_sensores(struct bmp280_calib_param *params, float *t_ah
     int32_t press_conv = bmp280_convert_pressure(press_raw, temp_raw, params);
     
     // Converte para float e aplica calibrações
-    *t_bmp = (temp_conv / 100.0f) + ajuste_temp_bmp;        // BMP280 retorna temp * 100
-    *press = press_conv + (ajuste_pressao * 100.0f);        // Pressão em Pa, ajuste em hPa
+    *t_bmp = (temp_conv / 100.0f) + ajuste_temp_bmp;       // BMP280 retorna temp * 100
+    *press = press_conv + (ajuste_pressao * 100.0f);      // Pressão em Pa, ajuste em hPa
     
     // Calcula temperatura média dos dois sensores
     *t_med = (*t_aht + *t_bmp) / 2.0f;
