@@ -51,6 +51,7 @@ add_executable(EstacaoMeteorologica_PicoW
     lib/bmp280.c
     lib/lwipopts_examples_common.h
     lib/lwipopts.h
+    html.c
 )
 
 target_link_libraries(EstacaoMeteorologica_PicoW
