@@ -1,4 +1,3 @@
-c
 #include "html.h"
 
 /* ---------- Páginas HTML do Sistema PicoAtmos ---------- */
