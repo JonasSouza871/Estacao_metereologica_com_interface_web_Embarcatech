@@ -99,8 +99,8 @@ Siga estes passos para configurar, compilar e carregar o firmware no seu Pico W.
 
 ```bash
 # 1. Clone o repositório do projeto
-git clone [https://github.com/JonasSouzaP/PicoAtmos-Estacao-Inteligente.git](https://github.com/JonasSouzaP/PicoAtmos-Estacao-Inteligente.git)
-cd PicoAtmos-Estacao-Inteligente
+https://github.com/JonasSouza871/Estacao_metereologica_com_interface_web_Embarcatech.git
+cd Estacao_metereologica_com_interface_web_Embarcatech
 
 # 2. Configure as credenciais do Wi-Fi
 # Edite o arquivo 'main.c' e insira o SSID e a senha 
