@@ -44,7 +44,7 @@ O **PicoAtmos** é um protótipo funcional de uma estação de monitoramento amb
 | Sensor AHT20 | 1 | Medição de Temperatura e Umidade (I2C). |
 | Sensor BMP280 | 1 | Medição de Temperatura e Pressão (I2C). |
 | Display OLED 128x64 | 1 | Para feedback visual local (I2C). |
-| Matriz de LED 8x8 MAX7219 | 1 | Para alertas visuais com ícones e animações. |
+| Matriz de LED 5x5 | 1 | Para alertas visuais com ícones e animações. |
 | LED RGB (Catodo Comum) | 1 | Para indicação de status por cores. |
 | Buzzer Passivo | 1 | Para alertas sonoros. |
 | Botões Momentâneos | 2 | Para navegação local (Avançar/Voltar). |
