@@ -23,20 +23,18 @@ O **PicoAtmos** é um protótipo funcional de uma estação de monitoramento amb
 
 ### 🖼 Galeria do Projeto
 
-| Interface Web Principal | Gráficos Dinâmicos | Configuração de Limites |
-| :---: | :---: | :---: |
-| *<img width="1531" height="398" alt="Print WEB dados" src="https://github.com/user-attachments/assets/ffd083de-75ab-4b10-b740-830357368cfd" />
-* | *<img width="1217" height="910" alt="Grafico interface tempo real" src="https://github.com/user-attachments/assets/66a70c96-98fb-40df-bf17-2b4b2bc56f82" />
-* | *<img width="745" height="761" alt="Interface configuracao limite" src="https://github.com/user-attachments/assets/56d78623-a56d-4312-ac86-8205355f8f98" />
-* |
+| **Interface Web Principal** | **Gráficos Dinâmicos** | **Configuração de Limites** |
+|:---:|:---:|:---:|
+| ![Interface Web](https://github.com/user-attachments/assets/ffd083de-75ab-4b10-b740-830357368cfd) | ![Gráfico Tempo Real](https://github.com/user-attachments/assets/66a70c96-98fb-40df-bf17-2b4b2bc56f82) | ![Configuração de Limites](https://github.com/user-attachments/assets/56d78623-a56d-4312-ac86-8205355f8f98) |
 | Dashboard centralizado para uma visão geral do sistema. | Análise de tendências com gráficos que se atualizam automaticamente. | Ajuste fino dos parâmetros de alerta de qualquer lugar da sua rede. |
-| **Display Local em Ação** | **Alertas Visuais e Sonoros** | |
-| *![Imagem plote display](https://github.com/user-attachments/assets/4a62e978-b75c-42f9-a89f-e432938b8e1a)
-* | *![Imagem medicao display](https://github.com/user-attachments/assets/279c8205-5cdd-4e75-8c50-712e9a741737)
-* | |
-| Feedback instantâneo no display OLED e LED de status. | Sistema rico de feedback com ícones, cores e sons específicos. | |
+
+| **Display Local em Ação** | **Alertas Visuais e Sonoros** |
+|:---:|:---:|
+| ![Display OLED](https://github.com/user-attachments/assets/4a62e978-b75c-42f9-a89f-e432938b8e1a) | ![Alertas](https://github.com/user-attachments/assets/279c8205-5cdd-4e75-8c50-712e9a741737) |
+| Feedback instantâneo no display OLED e LED de status. | Sistema rico de feedback com ícones, cores e sons específicos. |
 
 ---
+
 
 ### ⚙ Hardware Necessário
 
