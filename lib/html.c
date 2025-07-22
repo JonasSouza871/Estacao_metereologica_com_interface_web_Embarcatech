@@ -1,4 +1,5 @@
-#include "html.h"
+#ifndef HTML_H
+#define HTML_H
 
 /* ---------- Páginas HTML do Sistema PicoAtmos ---------- */
 // Este arquivo contém todas as páginas web do sistema de monitoramento atmosférico
@@ -286,7 +287,8 @@ const char HTML_LIMITES[] =
     "const umidMax = document.getElementById('umid_max').value;"
     "const pressMin = document.getElementById('press_min').value;"
     "const pressMax = document.getElementById('press_max').value;"
-    "fetch('/set_limits?temp_min=' + tempMin + '&temp_max=' + tempMax + '&umid_min=' + umidMin + '&umid_max=' + umidMax + '&press_min=' + pressMin + '&press_max=' + pressMax)"
+    "const cacheBuster = '&_=' + new Date().getTime();"
+    "fetch('/set_limits?temp_min=' + tempMin + '&temp_max=' + tempMax + '&umid_min=' + umidMin + '&umid_max=' + umidMax + '&press_min=' + pressMin + '&press_max=' + pressMax + cacheBuster)"
     ".then(response => response.text())"
     ".then(data => {"
     "console.log(data);"
@@ -295,7 +297,8 @@ const char HTML_LIMITES[] =
     "setTimeout(() => { msg.style.display = 'none'; }, 3000);"
     "});"
     "}"
-    "function atualizarDados() {"
+    // CORREÇÃO: Esta função agora só carrega os dados uma vez.
+    "function carregarDadosIniciais() {"
     "fetch('/dados').then(res => res.json()).then(data => {"
     "document.getElementById('temp_range_display').innerText = data.temp_min.toFixed(1) + ' - ' + data.temp_max.toFixed(1);"
     "document.getElementById('umid_range_display').innerText = data.umid_min.toFixed(1) + ' - ' + data.umid_max.toFixed(1);"
@@ -308,7 +311,8 @@ const char HTML_LIMITES[] =
     "document.getElementById('press_max').value = data.press_max.toFixed(1);"
     "});"
     "}"
-    "window.onload = function() { atualizarDados(); setInterval(atualizarDados, 3000); };"
+    // CORREÇÃO: Removemos o setInterval que estava sobrescrevendo os dados.
+    "window.onload = function() { carregarDadosIniciais(); };"
     "</script></head><body>"
     "<div class='container'>"
     "<h1>⚙️ Configuração de Limites</h1>"
@@ -393,14 +397,13 @@ const char HTML_CALIBRACAO[] =
     ".success-msg { background: #d4edda; color: #155724; padding: 10px; border-radius: 4px; margin: 10px 0; display: none; }"
     "</style>"
     "<script>"
-    "let ultimaAtualizacao = 0;"
-    "let offsetsCarregados = false;"
     "function atualizarCalibracoes() {"
     "const offsetTempAht = document.getElementById('offset_temp_aht').value;"
     "const offsetTempBmp = document.getElementById('offset_temp_bmp').value;"
     "const offsetUmid = document.getElementById('offset_umid').value;"
     "const offsetPress = document.getElementById('offset_press').value;"
-    "fetch('/set_offsets?offset_temp_aht=' + offsetTempAht + '&offset_temp_bmp=' + offsetTempBmp + '&offset_umid=' + offsetUmid + '&offset_press=' + offsetPress)"
+    "const cacheBuster = '&_=' + new Date().getTime();"
+    "fetch('/set_offsets?offset_temp_aht=' + offsetTempAht + '&offset_temp_bmp=' + offsetTempBmp + '&offset_umid=' + offsetUmid + '&offset_press=' + offsetPress + cacheBuster)"
     ".then(response => response.text())"
     ".then(data => {"
     "console.log(data);"
@@ -409,29 +412,30 @@ const char HTML_CALIBRACAO[] =
     "setTimeout(() => { msg.style.display = 'none'; }, 3000);"
     "});"
     "}"
-    "function inputEstaFocado() {"
-    "const activeElement = document.activeElement;"
-    "return activeElement && activeElement.tagName === 'INPUT';"
-    "}"
-    "function atualizarDados() {"
-    "if (inputEstaFocado()) {"
-    "return;"
-    "}"
+    // CORREÇÃO: Esta função só atualiza os valores de display, não os inputs.
+    "function atualizarValoresDisplay() {"
     "fetch('/dados').then(res => res.json()).then(data => {"
     "document.getElementById('temp_aht_atual').innerText = data.temp_aht.toFixed(2);"
     "document.getElementById('temp_bmp_atual').innerText = data.temp_bmp.toFixed(2);"
     "document.getElementById('umid_atual').innerText = data.umidade.toFixed(2);"
     "document.getElementById('press_atual').innerText = data.pressao.toFixed(2);"
-    "if (!offsetsCarregados) {"
+    "});"
+    "}"
+    // CORREÇÃO: Esta função carrega os offsets nos inputs apenas uma vez.
+    "function carregarOffsetsIniciais() {"
+    "fetch('/dados').then(res => res.json()).then(data => {"
     "document.getElementById('offset_temp_aht').value = data.offset_temp_aht.toFixed(2);"
     "document.getElementById('offset_temp_bmp').value = data.offset_temp_bmp.toFixed(2);"
     "document.getElementById('offset_umid').value = data.offset_umid.toFixed(2);"
     "document.getElementById('offset_press').value = data.offset_press.toFixed(2);"
-    "offsetsCarregados = true;"
-    "}"
     "});"
     "}"
-    "window.onload = function() { atualizarDados(); setInterval(atualizarDados, 3000); };"
+    // CORREÇÃO: Carrega os valores iniciais e depois só atualiza os displays.
+    "window.onload = function() { "
+    "carregarOffsetsIniciais();"
+    "atualizarValoresDisplay();"
+    "setInterval(atualizarValoresDisplay, 3000); "
+    "};"
     "</script></head><body>"
     "<div class='container'>"
     "<h1>🔧 Calibração dos Sensores</h1>"
@@ -501,3 +505,5 @@ const char HTML_CALIBRACAO[] =
     "<button onclick='atualizarCalibracoes()'>🔧 Salvar Calibrações</button>"
     "</div>"
     "</div></body></html>";
+
+#endif // HTML_H
