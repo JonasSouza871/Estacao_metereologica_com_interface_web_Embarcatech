@@ -149,10 +149,6 @@ cp PicoAtmos.uf2 /media/user/RPI-RP2
 ├── main.c
 ├── CMakeLists.txt
 └── README.md
-```
-*(Estrutura simplificada para representar a organização dos arquivos-chave, conforme o repositório.)*
-
----
 
 ### 🐛 Solução de Problemas
 
