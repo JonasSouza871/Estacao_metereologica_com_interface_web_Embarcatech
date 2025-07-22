@@ -48,8 +48,8 @@
 #define LED_VERMELHO_PIN 13          // LED vermelho do sistema RGB
 
 /* =================== CONFIGURAÇÕES DE REDE =================== */
-#define NOME_WIFI "Jonas Souza"      // Nome da rede WiFi para conexão
-#define SENHA_WIFI "12345678"        // Senha da rede WiFi
+#define NOME_WIFI "SUA_REDE_WIFI"      // Nome da rede WiFi para conexão
+#define SENHA_WIFI "SUA_SENHA"        // Senha da rede WiFi
 
 /* =================== DEFINIÇÕES DAS TELAS DO SISTEMA =================== */
 // Enumera todas as telas disponíveis no sistema de navegação
