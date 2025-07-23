@@ -25,12 +25,14 @@ O **PicoAtmos** é um protótipo funcional de uma estação de monitoramento amb
 
 | **Interface Web Principal** | **Gráficos Dinâmicos** | **Configuração de Limites** |
 |:---:|:---:|:---:|
-| ![Interface Web](https://github.com/user-attachments/assets/ffd083de-75ab-4b10-b740-830357368cfd) | ![Gráfico Tempo Real](https://github.com/user-attachments/assets/66a70c96-98fb-40df-bf17-2b4b2bc56f82) | ![Configuração de Limites](https://github.com/user-attachments/assets/56d78623-a56d-4312-ac86-8205355f8f98) |
+| ![Interface Web](https://github.com/user-attachments/assets/824bf6d4-92f6-41fb-8cd8-73902fedbf60) | ![Gráfico Tempo Real](https://github.com/user-attachments/assets/bb322e09-d1a2-48e0-8f01-0b3054638c65) | ![Configuração de Limites](https://github.com/user-attachments/assets/dc9444ab-2105-4b56-b7bb-ab6ce4f904dc) |
 | Dashboard centralizado para uma visão geral do sistema. | Análise de tendências com gráficos que se atualizam automaticamente. | Ajuste fino dos parâmetros de alerta de qualquer lugar da sua rede. |
+
+---
 
 | **Display Local em Ação** | **Alertas Visuais e Sonoros** |
 |:---:|:---:|
-| ![Display OLED](https://github.com/user-attachments/assets/4a62e978-b75c-42f9-a89f-e432938b8e1a) | ![Alertas](https://github.com/user-attachments/assets/279c8205-5cdd-4e75-8c50-712e9a741737) |
+| ![Display OLED](https://github.com/user-attachments/assets/bbd2ef03-1ebe-4d87-aa06-a08700826d24) | ![Alertas](https://github.com/user-attachments/assets/78f5128d-d9f4-41bc-99f3-7e2dfb91bf5d) |
 | Feedback instantâneo no display OLED e LED de status. | Sistema rico de feedback com ícones, cores e sons específicos. |
 
 ---
