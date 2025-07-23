@@ -152,6 +152,7 @@ cp PicoAtmos.uf2 /media/user/RPI-RP2
 ├── CMakeLists.txt
 └── README.md
 
+```
 ### 🐛 Solução de Problemas
 
 -   **Dispositivo não conecta ao Wi-Fi?**
